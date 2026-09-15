@@ -1,0 +1,39 @@
+{
+  "$comment": "Configuration for the golden-vector trace. All time values are in MICROSECONDS. Derived constants are included so tests can assert them independently of the acquisition trace; they follow from the formulas in the spec and should be re-derived, not trusted.",
+  "algorithm": "SmoothWarmingUp",
+  "provenance": {
+    "reference": "Google Guava RateLimiter.SmoothWarmingUp",
+    "secondary": "Alibaba Sentinel WarmUpController",
+    "license": "Apache-2.0",
+    "note": "Expected values in golden-vectors.csv are produced by hand-derivation and confirmed against the Guava reference implementation driven by a fake stopwatch."
+  },
+
+  "units": "microseconds",
+
+  "input": {
+    "stableRatePermitsPerSecond": 100,
+    "coldFactor": 3,
+    "warmupPeriodMicros": 3000000
+  },
+
+  "derived": {
+    "stableIntervalMicros": 10000,
+    "coldIntervalMicros": 30000,
+    "thresholdPermits": 150,
+    "maxPermits": 300,
+    "slopeMicrosPerPermit": 133.33333333333334,
+    "coolDownIntervalMicros": 10000
+  },
+
+  "initialState": {
+    "$comment": "SmoothWarmingUp starts fully cold: the pot begins at maxPermits.",
+    "storedPermits": 300,
+    "nextFreeTicketMicros": 0
+  },
+
+  "tolerance": {
+    "$comment": "Floating-point comparison epsilon. Absolute, in microseconds for time values and in permits for permit values.",
+    "timeMicros": 0.01,
+    "permits": 0.000001
+  }
+}

@@ -1,0 +1,13 @@
+step,now_micros,permits,expect_grant_micros,expect_stored_after,expect_next_free_micros,exercises
+1,0,1,0.0000,299.0000,29933.3333,cold start; debt model; first caller waits zero
+2,0,1,29933.3333,298.0000,59733.3333,pays previous caller's bill
+3,0,1,59733.3333,297.0000,89400.0000,ramp - cost shrinking
+4,100000,1,100000.0000,297.0600,129674.6667,resync fires; partial re-cool (297.00 -> 298.06 before spend)
+5,100000,1,129674.6667,296.0600,159216.0000,resync does NOT fire (timeline already ahead of clock)
+6,200000,160,200000.0000,140.0000,3300000.0000,THRESHOLD CROSSING - sloped region costs exactly 3000000 (= warmupPeriod) plus 10 flat permits at 10000
+7,200000,1,3300000.0000,139.0000,3310000.0000,below threshold - flat region; cost exactly 10000.00
+8,200000,1,3310000.0000,138.0000,3320000.0000,confirms stable rate
+9,5000000,1,5000000.0000,299.0000,5029933.3333,long idle exceeding warmupPeriod - resync caps stored at exactly 300.00
+10,5000000,400,5029933.3333,0.0000,10510000.0000,n > maxPermits - 299 stored drained then 101 fresh permits at stableInterval
+11,5000000,1,10510000.0000,0.0000,10520000.0000,empty pot; cost exactly 10000.00; stored stays 0
+12,5000000,1,10520000.0000,0.0000,10530000.0000,sustained stable rate
