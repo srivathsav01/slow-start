@@ -91,6 +91,7 @@ Results that confirm the invariants, none of them aimed at:
 - `nextFreeTicket` non-decreasing throughout.
 
 To cross-verify or check with different values, download `warmup-trace.xlsx` 
+
 ---
 
 ## Guava reference check
@@ -104,6 +105,8 @@ A throwaway Java harness drives Guava's `RateLimiter.SmoothWarmingUp` through th
 Three details that cost time to find: the limiter is built with the package-private `RateLimiter.create(rate, warmupPeriod, unit, coldFactor, stopwatch)` and cast to `SmoothRateLimiter`, since the state lives on that subclass; `acquire()` is avoided because it sleeps and returns seconds slept, so `reserveEarliestAvailable(permits, nowMicros)` is called directly for the grant time; and `storedPermits` is package-private and readable, but `nextFreeTicketMicros` is **private** and must be read via the accessor `queryEarliestAvailable(0)`. Raw output is preserved as `guava-output.csv`.
 
 ![Guava harness output](images/06-guava-output.png)
+
+Reference - [Guava Repo](https://github.com/google/guava/blob/master/guava-tests/test/com/google/common/util/concurrent/RateLimiterTest.java#L501)
 
 ### Result
 Divergence, exact vectors minus Guava, in microseconds:
@@ -142,6 +145,7 @@ Bounded impact: Guava's timeline runs up to 1 µs behind exact per acquisition, 
 Guava floors because Java's `long` cannot hold fractional microseconds — a language constraint, not a design choice. TypeScript numbers are doubles, so reproducing it would mean writing extra code to reintroduce another runtime's rounding limitation and ending up marginally less accurate.
  
 Accepted trade: this package is **not bit-identical** to Guava. Outputs may differ by up to 1 µs per acquisition, rate error bounded at 0.01% in the permissive direction, algorithm behaviour unchanged. Noted in the package README.
+
 ---
 
 ## Files
