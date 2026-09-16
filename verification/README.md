@@ -90,6 +90,7 @@ Results that confirm the invariants, none of them aimed at:
 - **Steps 1–3** — implied rate ≈ 33/s, which is `stableRate / coldFactor`.
 - `nextFreeTicket` non-decreasing throughout.
 
+To cross-verify or check with different values, download `warmup-trace.xlsx` 
 ---
 
 ## Guava reference check
@@ -115,7 +116,7 @@ A throwaway Java harness drives Guava's `RateLimiter.SmoothWarmingUp` through th
 | `config.json` | Parameters, derived constants, initial state, comparison tolerance |
 | `golden-vectors.csv` | **The oracle.** Inputs and observable outputs only — read by tests |
 | `trace-working.csv` | Full hand-trace with intermediates — for humans, no test reads it |
-| `algo-verification.xlsx` | Formulated Excel to change base data and verify |
+| `warmup-trace.xlsx` | Formulated Excel to change base data and verify |
 | `images/` | Diagrams and screenshots |
 
 The two CSVs differ deliberately. `golden-vectors.csv` omits intermediates like `stored_after_resync` and the trapezoid edge heights, because those are internal to one way of computing the result — a different route to the same answers should still pass.
