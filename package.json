@@ -1,0 +1,31 @@
+{
+  "name": "slow-start",
+  "version": "0.0.0",
+  "description": "TypeScript rate limiter that ramps up gradually after idle periods, so cold systems are not hit at full throughput.",
+  "private": true,
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "vitest run"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/srivathsav01/slow-start.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "Apache-2.0",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/srivathsav01/slow-start/issues"
+  },
+  "homepage": "https://github.com/srivathsav01/slow-start#readme",
+  "devDependencies": {
+    "@types/node": "^22.20.3",
+    "tsdown": "^0.23.0",
+    "typescript": "~6.0.3",
+    "vite": "^8.3.0",
+    "vitest": "^5.0.1"
+  }
+}
