@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# The workflow's token can read the repo and nothing else.
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Node ${{ matrix.node }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      # Let every job finish, so a Windows-only failure is not hidden
+      # behind a Linux one.
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        node: [22, 24]
+        include:
+          - os: windows-latest
+            node: 24
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      # Installs exactly what package-lock.json records; fails if it is out
+      # of sync with package.json.
+      - run: npm ci
+
+      - name: No runtime dependencies
+        shell: bash
+        run: |
+          node -e '
+            const deps = Object.keys(require("./package.json").dependencies ?? {});
+            if (deps.length > 0) {
+              console.error("Runtime dependencies are not allowed:", deps.join(", "));
+              process.exit(1);
+            }
+          '
+
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run check:package
+      - run: npm run test:smoke
