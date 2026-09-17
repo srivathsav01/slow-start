@@ -1,5 +1,5 @@
 {
-  "include": ["src", "test"],
+  "include": ["src", "test", "*.config.ts"],
   "compilerOptions": {
     "target": "es2022",
     "lib": ["es2023"],
@@ -11,5 +11,6 @@
     "exactOptionalPropertyTypes": true,
     "verbatimModuleSyntax": true,
     "noEmit": true,
+    "skipLibCheck": true
   }
 }

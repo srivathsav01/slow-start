@@ -10,14 +10,14 @@
     "test": "vitest run",
     "typecheck": "tsc",
     "build": "tsdown",
-    "check:package": "publint && attw --pack ."
+    "check:package": "npm run build && publint && attw --pack ."
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/srivathsav01/slow-start.git"
   },
   "keywords": [],
-  "author": "",
+  "author": "Srivathsav",
   "license": "Apache-2.0",
   "type": "module",
   "bugs": {
