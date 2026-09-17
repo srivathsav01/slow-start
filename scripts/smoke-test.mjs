@@ -1,0 +1,88 @@
+// Smoke test: install the packed tarball into a throwaway project outside the
+// repo, then load it the way real consumers do — once with `import`, once
+// with `require`. Run via `npm run test:smoke` (after a build).
+//
+// Outside the repo, so Node cannot resolve the package through the repo itself.
+// From the tarball, so a mistake in `files` or `exports` fails here.
+
+import { execFileSync } from 'node:child_process';
+import console from 'node:console';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import process from 'node:process';
+import { URL, fileURLToPath } from 'node:url';
+
+const PACKAGE_NAME = 'slow-start';
+const repoRoot = fileURLToPath(new URL('..', import.meta.url));
+
+// npm sets npm_execpath to its own CLI script when running an npm script.
+// Calling it through the current Node binary avoids spawning `npm.cmd`
+// through a shell on Windows.
+const npmCli = process.env.npm_execpath;
+if (!npmCli) {
+  throw new Error('Run this through npm: `npm run test:smoke`');
+}
+
+function run(file, args, cwd) {
+  return execFileSync(file, args, { cwd, encoding: 'utf8' });
+}
+
+function npm(args, cwd) {
+  return run(process.execPath, [npmCli, ...args], cwd);
+}
+
+const workDir = mkdtempSync(join(tmpdir(), `${PACKAGE_NAME}-smoke-`));
+let passed = false;
+
+try {
+  // 1. Pack exactly what `npm publish` would upload.
+  const [packed] = JSON.parse(npm(['pack', '--json', '--pack-destination', workDir], repoRoot));
+  const tarball = join(workDir, packed.filename);
+  console.log(`packed ${packed.filename} (${packed.entryCount} files)`);
+
+  // 2. A consumer project with no "type" field, so the .mjs / .cjs
+  //    extensions alone decide how each script is loaded.
+  writeFileSync(join(workDir, 'package.json'), JSON.stringify({ name: 'smoke-consumer', private: true }));
+  npm(['install', tarball, '--no-audit', '--no-fund', '--no-package-lock'], workDir);
+
+  // 3. Each consumer reports which file it resolved to and what it exports.
+  writeFileSync(
+    join(workDir, 'esm.mjs'),
+    `const mod = await import('${PACKAGE_NAME}');
+console.log(JSON.stringify({ file: import.meta.resolve('${PACKAGE_NAME}'), exports: Object.keys(mod).sort() }));`,
+  );
+  writeFileSync(
+    join(workDir, 'cjs.cjs'),
+    `const mod = require('${PACKAGE_NAME}');
+console.log(JSON.stringify({ file: require.resolve('${PACKAGE_NAME}'), exports: Object.keys(mod).sort() }));`,
+  );
+
+  const esm = JSON.parse(run(process.execPath, ['esm.mjs'], workDir));
+  const cjs = JSON.parse(run(process.execPath, ['cjs.cjs'], workDir));
+
+  // 4. Each loader must reach its own build, and both builds must agree.
+  const failures = [];
+  if (!esm.file.endsWith('.mjs')) failures.push(`import resolved to ${esm.file}, expected a .mjs file`);
+  if (!cjs.file.endsWith('.cjs')) failures.push(`require resolved to ${cjs.file}, expected a .cjs file`);
+  if (esm.exports.length === 0) failures.push('import found no exports');
+  if (JSON.stringify(esm.exports) !== JSON.stringify(cjs.exports)) {
+    failures.push(`exports differ: import ${JSON.stringify(esm.exports)}, require ${JSON.stringify(cjs.exports)}`);
+  }
+
+  if (failures.length > 0) {
+    throw new Error(`smoke test failed:\n  ${failures.join('\n  ')}`);
+  }
+
+  console.log(`import  -> ${esm.exports.join(', ')}`);
+  console.log(`require -> ${cjs.exports.join(', ')}`);
+  console.log('smoke test passed');
+  passed = true;
+} finally {
+  // Keep the directory after a failure so it can be inspected.
+  if (passed) {
+    rmSync(workDir, { recursive: true, force: true });
+  } else {
+    console.error(`smoke test directory kept for inspection: ${workDir}`);
+  }
+}

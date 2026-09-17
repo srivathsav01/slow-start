@@ -11,7 +11,8 @@
     "typecheck": "tsc",
     "build": "tsdown",
     "check:package": "npm run build && publint && attw --pack .",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "test:smoke": "npm run build && node scripts/smoke-test.mjs"
   },
   "repository": {
     "type": "git",
