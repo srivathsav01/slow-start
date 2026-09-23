@@ -13,4 +13,11 @@ export interface Clock {
    * only the difference between two readings does.
    */
   now(): bigint;
+
+  /**
+   * Waits until `now()` has moved at least `nanos` past the moment of the
+   * call. May resolve late; must never resolve early. Resolves at once when
+   * `nanos` is zero or negative.
+   */
+  sleep(nanos: bigint, signal?: AbortSignal): Promise<void>;
 }

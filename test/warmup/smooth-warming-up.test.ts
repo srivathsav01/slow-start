@@ -145,6 +145,32 @@ describe('SmoothWarmingUp', () => {
     });
   });
 
+  describe('peekWaitMicros', () => {
+    it('returns what reserve would return', () => {
+      const { clock, limiter } = setup();
+      limiter.reserve(40);
+      clock.advance(micros(250_000));
+      expect(limiter.peekWaitMicros(7)).toBe(limiter.reserve(7));
+    });
+
+    it('leaves the state untouched, however often it is called', () => {
+      const { limiter } = setup();
+      const before = limiter.snapshot();
+      for (let i = 0; i < 100; i++) limiter.peekWaitMicros(50);
+      expect(limiter.snapshot()).toEqual(before);
+    });
+
+    it('peeks one permit by default', () => {
+      const { limiter } = setup();
+      expect(limiter.peekWaitMicros()).toBe(limiter.peekWaitMicros(1));
+    });
+
+    it.each([0, -1, 1.5, NaN, 2 ** 53])('rejects %s', (permits) => {
+      const { limiter } = setup();
+      expect(() => limiter.peekWaitMicros(permits)).toThrow(RangeError);
+    });
+  });
+
   describe('snapshot', () => {
     it('returns a copy that cannot change the limiter', () => {
       const { limiter } = setup();
