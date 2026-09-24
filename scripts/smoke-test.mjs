@@ -14,6 +14,7 @@ import process from 'node:process';
 import { URL, fileURLToPath } from 'node:url';
 
 const PACKAGE_NAME = 'slow-start';
+const EXPECTED_EXPORTS = ['ManualClock', 'SystemClock', 'WarmupLimiter'];
 const repoRoot = fileURLToPath(new URL('..', import.meta.url));
 
 // npm sets npm_execpath to its own CLI script when running an npm script.
@@ -65,7 +66,8 @@ console.log(JSON.stringify({ file: require.resolve('${PACKAGE_NAME}'), exports: 
   const failures = [];
   if (!esm.file.endsWith('.mjs')) failures.push(`import resolved to ${esm.file}, expected a .mjs file`);
   if (!cjs.file.endsWith('.cjs')) failures.push(`require resolved to ${cjs.file}, expected a .cjs file`);
-  if (esm.exports.length === 0) failures.push('import found no exports');
+  const missing = EXPECTED_EXPORTS.filter((name) => !esm.exports.includes(name));
+  if (missing.length > 0) failures.push(`missing exports: ${missing.join(', ')}`);
   if (JSON.stringify(esm.exports) !== JSON.stringify(cjs.exports)) {
     failures.push(`exports differ: import ${JSON.stringify(esm.exports)}, require ${JSON.stringify(cjs.exports)}`);
   }
