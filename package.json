@@ -12,7 +12,9 @@
     "build": "tsdown",
     "check:package": "npm run build && publint && attw --pack .",
     "lint": "eslint .",
-    "test:smoke": "npm run build && node scripts/smoke-test.mjs"
+    "test:smoke": "npm run build && node scripts/smoke-test.mjs",
+    "bench": "npm run build && node bench/run.mjs && node bench/plot.mjs",
+    "bench:perf": "npm run build && node --expose-gc bench/perf.mjs"
   },
   "repository": {
     "type": "git",

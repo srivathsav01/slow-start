@@ -55,6 +55,18 @@ export default defineConfig(
     },
   },
 
+  // Benchmarks and scripts run as plain Node ESM with no Node globals
+  // declared, so the few web-standard globals they use are named here.
+  {
+    files: ['bench/**/*.mjs', 'scripts/**/*.mjs'],
+    languageOptions: {
+      globals: {
+        AbortController: 'readonly',
+        globalThis: 'readonly',
+      },
+    },
+  },
+
   {
     files: ['src/**/*.ts'],
     rules: {

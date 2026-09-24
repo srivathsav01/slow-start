@@ -1,0 +1,85 @@
+{
+  "methodology": {
+    "generatedAt": "2026-09-24T12:27:29.547Z",
+    "node": "v24.14.0",
+    "platform": "win32 x64",
+    "config": {
+      "permitsPerSecond": 100,
+      "warmupPeriodMs": 3000,
+      "coldFactor": 3
+    },
+    "clock": "ManualClock — simulated time, identical on every machine",
+    "grantResolutionMicros": 250,
+    "note": "Behavioural results only. Timing and memory costs are measured separately by bench/perf.mjs on a real clock."
+  },
+  "scenarios": {
+    "steady-state": {
+      "title": "1. Steady state — sustained demand past warm-up",
+      "permitsAfterWarmup": 450,
+      "stableIntervalMicros": 10000,
+      "intervalMicros": {
+        "count": 449,
+        "mean": 10000,
+        "min": 10000,
+        "max": 10000,
+        "p50": 10000,
+        "p95": 10000,
+        "p99": 10000
+      },
+      "meanErrorPercent": 0
+    },
+    "cold-start-burst": {
+      "title": "2. Cold-start burst — 400 requests at t=0",
+      "admittedInFirstSecond": {
+        "warmup": 37,
+        "fixedRate": 101,
+        "tokenBucket": 400
+      },
+      "firstIntervalMicros": {
+        "warmup": 30000,
+        "coldIntervalMicros": 30000
+      },
+      "rampReachesStableAtMicros": 3000000,
+      "drainedAtMicros": 5490000
+    },
+    "idle-recooling": {
+      "title": "3. Idle → burst — re-cooling after a full warm-up period of idleness",
+      "firstBurstSpanMicros": 2990000,
+      "secondBurstSpanMicros": 2990000,
+      "maxDifferenceMicros": 0,
+      "note": "The second burst is throttled like the first: the limiter went fully cold again."
+    },
+    "repeated-cycles": {
+      "title": "4. Repeated burst/idle cycles — drift check over 10 cycles",
+      "cycles": 10,
+      "spanMicros": {
+        "count": 9,
+        "mean": 1310000,
+        "min": 1310000,
+        "max": 1310000,
+        "p50": 1310000,
+        "p95": 1310000,
+        "p99": 1310000
+      },
+      "maxDriftFromSecondCycleMicros": 0,
+      "note": "Cycle 0 differs: the limiter starts fully cold with an empty timeline."
+    },
+    "algorithm-comparison": {
+      "title": "5. Warm-up vs token bucket vs fixed window vs fixed rate — 300 requests at t=0",
+      "peakPermitsPerSecond": {
+        "warmup": 100,
+        "tokenBucket": 1200,
+        "fixedWindow": 1192,
+        "fixedRate": 100
+      },
+      "note": "Not a throughput contest (§13.4). The token bucket and fixed window admit the burst at once by design; the warm-up limiter exists to ramp instead."
+    },
+    "cost-function": {
+      "title": "Cost function — acquisition interval against stored permits (§5.4)",
+      "thresholdPermits": 150,
+      "stableIntervalMicros": 10000,
+      "coldIntervalMicros": 30000,
+      "note": "Flat at the stable interval below the threshold, sloping up to the cold interval at maxPermits."
+    }
+  }
+}

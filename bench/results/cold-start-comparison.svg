@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 380" width="760" height="380" font-family="system-ui, sans-serif">
+<text x="68" y="24" font-size="15" font-weight="600" fill="#8b949e">300 requests at once: warm-up ramps, the others admit the burst</text>
+<line x1="68" y1="328" x2="736" y2="328" stroke="#8b949e" stroke-opacity="0.18"/>
+<text x="60" y="332" font-size="11" fill="#8b949e" text-anchor="end">0</text>
+<line x1="68" y1="217.6604938271605" x2="736" y2="217.6604938271605" stroke="#8b949e" stroke-opacity="0.18"/>
+<text x="60" y="221.6604938271605" font-size="11" fill="#8b949e" text-anchor="end">500</text>
+<line x1="68" y1="107.32098765432099" x2="736" y2="107.32098765432099" stroke="#8b949e" stroke-opacity="0.18"/>
+<text x="60" y="111.32098765432099" font-size="11" fill="#8b949e" text-anchor="end">1000</text>
+<text x="68" y="346" font-size="11" fill="#8b949e" text-anchor="middle">0</text>
+<text x="225.1764705882353" y="346" font-size="11" fill="#8b949e" text-anchor="middle">1</text>
+<text x="382.3529411764706" y="346" font-size="11" fill="#8b949e" text-anchor="middle">2</text>
+<text x="539.5294117647059" y="346" font-size="11" fill="#8b949e" text-anchor="middle">3</text>
+<text x="696.7058823529412" y="346" font-size="11" fill="#8b949e" text-anchor="middle">4</text>
+<line x1="68" y1="328" x2="736" y2="328" stroke="#8b949e" stroke-opacity="0.5"/>
+<text x="402" y="368" font-size="12" fill="#8b949e" text-anchor="middle">time (seconds)</text>
+<text x="16" y="185" font-size="12" fill="#8b949e" text-anchor="middle" transform="rotate(-90 16 185)">permits per second</text>
+<path d="M68.0 320.1 L107.3 320.1 L146.6 320.1 L185.9 319.2 L225.2 319.2 L264.5 318.3 L303.8 318.3 L343.1 316.5 L382.4 315.6 L421.6 314.8 L460.9 312.1 L500.2 309.5 L539.5 305.9 L578.8 305.9 L618.1 305.9 L657.4 305.9 L696.7 305.9 L736.0 305.9" fill="none" stroke="#2f81f7" stroke-width="2"/>
+<line x1="80" y1="30" x2="98" y2="30" stroke="#2f81f7" stroke-width="2"/>
+<text x="104" y="34" font-size="11" fill="#8b949e">warm-up</text>
+<path d="M68.0 63.2 L107.3 328.0 L146.6 328.0 L185.9 328.0 L225.2 328.0 L264.5 328.0 L303.8 328.0 L343.1 328.0 L382.4 328.0 L421.6 328.0 L460.9 328.0 L500.2 328.0 L539.5 328.0 L578.8 328.0 L618.1 328.0 L657.4 328.0 L696.7 328.0 L736.0 328.0" fill="none" stroke="#d29922" stroke-width="2"/>
+<line x1="245" y1="30" x2="263" y2="30" stroke="#d29922" stroke-width="2"/>
+<text x="269" y="34" font-size="11" fill="#8b949e">token bucket</text>
+<path d="M68.0 65.0 L107.3 328.0 L146.6 328.0 L185.9 328.0 L225.2 326.2 L264.5 328.0 L303.8 328.0 L343.1 328.0 L382.4 328.0 L421.6 328.0 L460.9 328.0 L500.2 328.0 L539.5 328.0 L578.8 328.0 L618.1 328.0 L657.4 328.0 L696.7 328.0 L736.0 328.0" fill="none" stroke="#bc4c00" stroke-width="2"/>
+<line x1="410" y1="30" x2="428" y2="30" stroke="#bc4c00" stroke-width="2"/>
+<text x="434" y="34" font-size="11" fill="#8b949e">fixed window</text>
+<path d="M68.0 305.9 L107.3 305.9 L146.6 305.9 L185.9 305.9 L225.2 305.9 L264.5 305.9 L303.8 305.9 L343.1 305.9 L382.4 305.9 L421.6 305.9 L460.9 305.9 L500.2 305.9 L539.5 328.0 L578.8 328.0 L618.1 328.0 L657.4 328.0 L696.7 328.0 L736.0 328.0" fill="none" stroke="#8250df" stroke-width="2"/>
+<line x1="575" y1="30" x2="593" y2="30" stroke="#8250df" stroke-width="2"/>
+<text x="599" y="34" font-size="11" fill="#8b949e">fixed rate</text>
+</svg>
