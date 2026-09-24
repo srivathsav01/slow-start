@@ -1,6 +1,6 @@
 {
   "methodology": {
-    "generatedAt": "2026-09-24T12:27:29.547Z",
+    "generatedAt": "2026-09-24T13:32:50.556Z",
     "node": "v24.14.0",
     "platform": "win32 x64",
     "config": {
@@ -73,6 +73,20 @@
         "fixedRate": 100
       },
       "note": "Not a throughput contest (§13.4). The token bucket and fixed window admit the burst at once by design; the warm-up limiter exists to ramp instead."
+    },
+    "warmup-vs-pacing": {
+      "title": "6. Warm-up vs fixed pacing — pacing smooths, only warm-up ramps",
+      "admittedInFirstSecond": {
+        "warmup": 37,
+        "fixedPacing": 101
+      },
+      "intervalMicros": {
+        "warmupFirst": 30000,
+        "warmupLast": 10000,
+        "fixedPacingFirst": 10000,
+        "fixedPacingLast": 10000
+      },
+      "note": "Fixed pacing holds one interval from the first call to the last. Warm-up starts at the cold interval and converges to the same steady interval."
     },
     "cost-function": {
       "title": "Cost function — acquisition interval against stored permits (§5.4)",

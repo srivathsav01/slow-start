@@ -230,6 +230,58 @@ async function algorithmComparison() {
 }
 
 /**
+ * 6. Warm-up versus fixed pacing.
+ *
+ * Fixed pacing spaces callers evenly at the stable interval from the very
+ * first call. It smooths a burst, but it does not ramp: a cold process is hit
+ * at full rate immediately. That contrast is the whole scenario.
+ *
+ * Scenario 7, warm-up composed WITH pacing, needs the pacing subsystem of
+ * v0.2.0 and is deliberately absent rather than mocked.
+ */
+async function warmupVsPacing() {
+  const arrivals = burst(300);
+  const [warm, paced] = await Promise.all([
+    run(factories.warmup, arrivals),
+    run(factories.fixedRate, arrivals),
+  ]);
+
+  const bucketMicros = 250_000;
+  const warmSeries = throughputSeries(warm, bucketMicros);
+  const pacedSeries = throughputSeries(paced, bucketMicros);
+  const length = Math.max(warmSeries.length, pacedSeries.length);
+
+  const rows = [];
+  for (let index = 0; index < length; index += 1) {
+    rows.push([
+      index * bucketMicros,
+      warmSeries[index]?.permitsPerSecond ?? 0,
+      pacedSeries[index]?.permitsPerSecond ?? 0,
+    ]);
+  }
+
+  const firstSecond = (records) =>
+    records.filter((record) => record.grantMicros <= 1_000_000).length;
+
+  return {
+    name: 'warmup-vs-pacing',
+    title: '6. Warm-up vs fixed pacing — pacing smooths, only warm-up ramps',
+    columns: ['t_micros', 'warmup_pps', 'fixed_pacing_pps'],
+    rows,
+    summary: {
+      admittedInFirstSecond: { warmup: firstSecond(warm), fixedPacing: firstSecond(paced) },
+      intervalMicros: {
+        warmupFirst: warm[1].grantMicros - warm[0].grantMicros,
+        warmupLast: warm[warm.length - 1].grantMicros - warm[warm.length - 2].grantMicros,
+        fixedPacingFirst: paced[1].grantMicros - paced[0].grantMicros,
+        fixedPacingLast: paced[paced.length - 1].grantMicros - paced[paced.length - 2].grantMicros,
+      },
+      note: 'Fixed pacing holds one interval from the first call to the last. Warm-up starts at the cold interval and converges to the same steady interval.',
+    },
+  };
+}
+
+/**
  * Not a §13.1 scenario: the data behind the §13.3 cost-function graph.
  *
  * Measured, not computed — the x values are the stored-permit levels the
@@ -264,5 +316,6 @@ export const scenarios = [
   idleRecooling,
   repeatedCycles,
   algorithmComparison,
+  warmupVsPacing,
   costFunction,
 ];
