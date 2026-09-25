@@ -145,6 +145,67 @@ describe('SmoothWarmingUp', () => {
     });
   });
 
+  // Spec §8.1: a request large enough to push the timeline past 2^53 would
+  // silently lose microsecond precision for every later caller.
+  describe('rejects permit counts that would overflow the timeline', () => {
+    // Derived independently of the implementation: whatever is left of the
+    // safe-integer range after reserving the cost of draining a full pot,
+    // divided by what one fresh permit costs.
+    const limitFor = (stableIntervalMicros: number, warmupPeriodMicros: number): number =>
+      Math.floor((Number.MAX_SAFE_INTEGER - 1.5 * warmupPeriodMicros) / stableIntervalMicros);
+
+    const LIMIT = limitFor(10_000, 3_000_000);
+
+    it('accepts exactly the limit, and the timeline stays exact', () => {
+      const { limiter } = setup();
+      expect(limiter.reserve(LIMIT)).toBe(0);
+
+      const { nextFreeTicketMicros } = limiter.snapshot();
+      expect(Number.isSafeInteger(Math.trunc(nextFreeTicketMicros))).toBe(true);
+      // One more microsecond is still a distinct number: no rounding yet.
+      expect(nextFreeTicketMicros + 1).toBeGreaterThan(nextFreeTicketMicros);
+    });
+
+    it.each([LIMIT + 1, 2 ** 52, Number.MAX_SAFE_INTEGER])('rejects %s', (permits) => {
+      const { limiter } = setup();
+      expect(() => limiter.reserve(permits)).toThrow(RangeError);
+      expect(() => limiter.reserve(permits)).toThrow(
+        `permits must be at most ${String(LIMIT)} at this rate, got ${String(permits)}`,
+      );
+      expect(limiter.snapshot()).toEqual({ storedPermits: 300, nextFreeTicketMicros: 0 });
+    });
+
+    it('applies the same limit to peekWaitMicros', () => {
+      const { limiter } = setup();
+      expect(() => limiter.peekWaitMicros(LIMIT + 1)).toThrow(RangeError);
+      expect(limiter.peekWaitMicros(LIMIT)).toBe(0);
+    });
+
+    it('scales the limit with the configured rate', () => {
+      const slow = new SmoothWarmingUp(
+        { permitsPerSecond: 1, warmupPeriodMs: 1000 },
+        new ManualClock(),
+      );
+      const slowLimit = limitFor(1_000_000, 1_000_000);
+
+      expect(() => slow.reserve(slowLimit + 1)).toThrow(RangeError);
+      expect(slow.reserve(slowLimit)).toBe(0);
+      // A slower rate means a smaller ceiling: each permit costs more time.
+      expect(slowLimit).toBeLessThan(LIMIT);
+    });
+
+    it('never rejects a single permit, however slow the rate', () => {
+      // One permit costs more microseconds than a number can hold exactly,
+      // so the ceiling would round to zero without its floor of 1.
+      const glacial = new SmoothWarmingUp(
+        { permitsPerSecond: 1e-12, warmupPeriodMs: 1000 },
+        new ManualClock(),
+      );
+      expect(glacial.reserve(1)).toBe(0);
+      expect(() => glacial.reserve(2)).toThrow(RangeError);
+    });
+  });
+
   describe('peekWaitMicros', () => {
     it('returns what reserve would return', () => {
       const { clock, limiter } = setup();

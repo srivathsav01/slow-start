@@ -47,7 +47,8 @@ export class WarmupLimiter {
    * (spec §7.2).
    *
    * @returns A promise rejecting with a `RangeError` if `permits` is not a
-   * positive safe integer, or with `options.signal.reason` if cancelled.
+   * positive safe integer or is too large for this rate, or with
+   * `options.signal.reason` if cancelled.
    */
   async acquire(permits = 1, options: AcquireOptions = {}): Promise<AcquireResult> {
     // Before reserving: an already-cancelled caller spends nothing.

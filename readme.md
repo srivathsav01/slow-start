@@ -91,6 +91,7 @@ const { waitedMs, storedPermitsAfter } = await limiter.acquire(2);
 ```
 
 - `permits` must be a positive safe integer; anything else rejects with a `RangeError`. Zero is an error rather than a silent no-op, because its intent is ambiguous.
+- There is also an upper bound, scaled to your rate: a request whose cost could not be represented exactly in microseconds is rejected rather than silently corrupting the timeline. At 100 permits/s the ceiling is about 9×10¹¹ permits, so ordinary use never meets it.
 - Asking for more permits than the limiter holds is allowed. The request drains what is stored and pays the stable interval for the rest, so the wait is proportionally longer.
 - `options.signal` takes an `AbortSignal`. See [Cancellation](#cancellation).
 
