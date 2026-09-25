@@ -1,0 +1,156 @@
+name: Release
+
+# Run it from the Actions tab: pick the bump, and this workflow runs the full
+# gate, bumps the version, publishes to npm, pushes the tag and opens the
+# GitHub release. Nothing is published unless every check passes first.
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: 'Version bump'
+        type: choice
+        required: true
+        default: patch
+        options:
+          - patch
+          - minor
+          - major
+          - prerelease
+          - custom
+      custom_version:
+        description: 'Exact version, used only when bump is "custom" (e.g. 0.3.0-rc.1)'
+        type: string
+        required: false
+      dist_tag:
+        description: 'npm dist-tag to publish under'
+        type: choice
+        required: true
+        default: latest
+        options:
+          - latest
+          - next
+      dry_run:
+        description: 'Run every check and pack the tarball, but publish nothing'
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: write # push the version commit and tag, and create the release
+  id-token: write # OIDC, so npm can verify the publisher without a token
+
+jobs:
+  release:
+    name: Publish ${{ inputs.bump }}${{ inputs.dry_run && ' (dry run)' || '' }}
+    runs-on: ubuntu-latest
+    environment: release
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The whole history, so `npm version` can write a commit and tag.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          registry-url: https://registry.npmjs.org
+
+      # Trusted publishing needs npm 11.5.1 or newer. The runner usually has
+      # it; upgrade when it does not, so a runner image change cannot turn
+      # this into a confusing auth error.
+      - name: Ensure npm supports trusted publishing
+        run: |
+          required=11.5.1
+          current=$(npm --version)
+          if [ "$(printf '%s\n%s\n' "$required" "$current" | sort -V | head -1)" != "$required" ]; then
+            echo "npm $current is older than $required; upgrading"
+            npm install -g npm@latest
+          fi
+          npm --version
+
+      - run: npm ci
+
+      # The same gate CI runs on every push. Publishing from a green run is
+      # most of the point of releasing from here rather than a laptop.
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run check:package
+      - run: npm run test:smoke
+
+      - name: Work out the new version
+        id: version
+        run: |
+          if [ "${{ inputs.bump }}" = "custom" ]; then
+            target="${{ inputs.custom_version }}"
+            if [ -z "$target" ]; then
+              echo "::error::bump is \"custom\" but no custom_version was given"
+              exit 1
+            fi
+          else
+            target="${{ inputs.bump }}"
+          fi
+
+          # --no-git-tag-version first, purely to compute the number; the real
+          # commit and tag are made below once the value is known and checked.
+          new=$(npm version "$target" --no-git-tag-version)
+          git checkout -- package.json package-lock.json
+          echo "version=${new#v}" >> "$GITHUB_OUTPUT"
+          echo "tag=$new" >> "$GITHUB_OUTPUT"
+          echo "Releasing $new"
+
+      - name: Refuse to reuse a published version
+        run: |
+          name=$(node -p "require('./package.json').name")
+          version="${{ steps.version.outputs.version }}"
+          if npm view "$name@$version" version >/dev/null 2>&1; then
+            echo "::error::$name@$version is already on the registry; versions are permanent"
+            exit 1
+          fi
+
+      - name: Commit and tag
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          npm version "${{ steps.version.outputs.version }}" -m 'Release %s'
+
+      - name: Publish to npm
+        if: ${{ !inputs.dry_run }}
+        # No NODE_AUTH_TOKEN: the OIDC token from `id-token: write` proves who
+        # is publishing, and npm attaches a provenance attestation for free.
+        run: npm publish --tag '${{ inputs.dist_tag }}'
+
+      - name: Pack only (dry run)
+        if: ${{ inputs.dry_run }}
+        run: npm publish --dry-run --tag '${{ inputs.dist_tag }}'
+
+      # Pushed after publishing: a tag in the repo for a version that never
+      # reached the registry is worse than a publish that still needs its tag
+      # pushed, which is one command to fix.
+      - name: Push the version commit and tag
+        if: ${{ !inputs.dry_run }}
+        run: git push --follow-tags
+
+      - name: Create the GitHub release
+        if: ${{ !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create '${{ steps.version.outputs.tag }}' \
+            --title '${{ steps.version.outputs.tag }}' \
+            --generate-notes \
+            ${{ inputs.dist_tag == 'next' && '--prerelease' || '' }}
+
+      - name: Summary
+        run: |
+          {
+            echo "### ${{ steps.version.outputs.tag }}"
+            echo
+            if [ "${{ inputs.dry_run }}" = "true" ]; then
+              echo "Dry run: every check passed and the tarball packed. Nothing was published."
+            else
+              echo "Published to npm under \`${{ inputs.dist_tag }}\` and released on GitHub."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
