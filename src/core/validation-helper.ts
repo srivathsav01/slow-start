@@ -15,3 +15,19 @@ export function requireFiniteAbove(name: string, value: number, min: number): nu
   }
   return value;
 }
+
+/**
+ * Validates that a number is a whole count above zero: no fractions, no
+ * `NaN`, no `Infinity`, and nothing large enough to lose precision.
+ *
+ * @param name - The option's name, used in the error message.
+ * @param value - The value to validate.
+ * @returns The validated value.
+ * @throws RangeError if the value is not a positive safe integer.
+ */
+export function requirePositiveInteger(name: string, value: number): number {
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw new RangeError(`${name} must be a positive integer, got ${String(value)}`);
+  }
+  return value;
+}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { requireFiniteAbove } from '../../src/core/validation-helper.js';
+import { requireFiniteAbove, requirePositiveInteger } from '../../src/core/validation-helper.js';
 
 describe('requireFiniteAbove', () => {
   describe('accepts values strictly above the minimum', () => {
@@ -34,6 +34,23 @@ describe('requireFiniteAbove', () => {
   it('rejects a non-number passed from untyped JavaScript', () => {
     const fromJavaScript = '100' as unknown as number;
     expect(() => requireFiniteAbove('permitsPerSecond', fromJavaScript, 0)).toThrow(RangeError);
+  });
+
+  describe('requirePositiveInteger', () => {
+    it.each([1, 2, 1000, Number.MAX_SAFE_INTEGER])('accepts %s', (value) => {
+      expect(requirePositiveInteger('maxQueueDepth', value)).toBe(value);
+    });
+
+    it.each([0, -0, -1, 2.5, 0.5, NaN, Infinity, -Infinity, 2 ** 53])('rejects %s', (value) => {
+      // 2^53 is rejected because integers above it are no longer exact.
+      expect(() => requirePositiveInteger('maxQueueDepth', value)).toThrow(RangeError);
+    });
+
+    it('names the option and the actual value', () => {
+      expect(() => requirePositiveInteger('maxQueueDepth', 2.5)).toThrow(
+        'maxQueueDepth must be a positive integer, got 2.5',
+      );
+    });
   });
 
   describe('error messages name the option, the rule and the actual value', () => {
