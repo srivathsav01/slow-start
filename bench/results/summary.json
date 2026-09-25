@@ -1,6 +1,6 @@
 {
   "methodology": {
-    "generatedAt": "2026-09-24T13:32:50.556Z",
+    "generatedAt": "2026-09-25T18:26:14.252Z",
     "node": "v24.14.0",
     "platform": "win32 x64",
     "config": {
@@ -9,7 +9,11 @@
       "coldFactor": 3
     },
     "clock": "ManualClock — simulated time, identical on every machine",
-    "grantResolutionMicros": 250,
+    "grantResolutionMicros": {
+      "default": 250,
+      "costFunction": 100,
+      "note": "Grant times are sampled by stepping the clock, so they are accurate to the step, rounded up. Figures needing more precision are asked of the limiter directly and labelled \"exact\"."
+    },
     "note": "Behavioural results only. Timing and memory costs are measured separately by bench/perf.mjs on a real clock."
   },
   "scenarios": {
@@ -36,7 +40,9 @@
         "tokenBucket": 400
       },
       "firstIntervalMicros": {
-        "warmup": 30000,
+        "measuredAtStepMicros": 30000,
+        "driverStepMicros": 250,
+        "exactFirstPermitMicros": 29933.333333333336,
         "coldIntervalMicros": 30000
       },
       "rampReachesStableAtMicros": 3000000,
@@ -69,7 +75,7 @@
       "peakPermitsPerSecond": {
         "warmup": 100,
         "tokenBucket": 1200,
-        "fixedWindow": 1192,
+        "fixedWindow": 400,
         "fixedRate": 100
       },
       "note": "Not a throughput contest (§13.4). The token bucket and fixed window admit the burst at once by design; the warm-up limiter exists to ramp instead."
@@ -87,6 +93,28 @@
         "fixedPacingLast": 10000
       },
       "note": "Fixed pacing holds one interval from the first call to the last. Warm-up starts at the cold interval and converges to the same steady interval."
+    },
+    "warmup-with-pacing": {
+      "title": "7. Warm-up composed with pacing — ramping rate, bounded queue",
+      "maxQueueDelayMs": 500,
+      "requests": 1200,
+      "arrivalRatePerSecond": 200,
+      "composed": {
+        "admitted": 500,
+        "refused": 700,
+        "refusalReasons": [
+          "delay"
+        ],
+        "longestWaitMicros": 500000,
+        "meanWaitMicros": 488610
+      },
+      "warmupAlone": {
+        "admitted": 1200,
+        "refused": 0,
+        "longestWaitMicros": 7495000,
+        "meanWaitMicros": 4434383.333333333
+      },
+      "note": "Composition costs one line: new QueuedLimiter(warmupLimiter, bounds, clock). Both admit at the warm-up rate; the bounded one refuses callers it cannot serve within the bound instead of letting waits grow without limit."
     },
     "cost-function": {
       "title": "Cost function — acquisition interval against stored permits (§5.4)",

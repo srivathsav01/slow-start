@@ -1,5 +1,6 @@
 import type { Clock } from '../clock/clock.js';
 import { SystemClock } from '../clock/system-clock.js';
+import type { Scheduler } from '../core/scheduler.js';
 import type { WarmupOptions } from './constants.js';
 import { SmoothWarmingUp } from './smooth-warming-up.js';
 
@@ -25,7 +26,7 @@ export interface AcquireResult {
  * A rate limiter that warms up: it admits slowly when cold and reaches its
  * configured rate after the warm-up period of sustained demand.
  */
-export class WarmupLimiter {
+export class WarmupLimiter implements Scheduler {
   private readonly clock: Clock;
   private readonly machine: SmoothWarmingUp;
 
@@ -55,7 +56,7 @@ export class WarmupLimiter {
     options.signal?.throwIfAborted();
 
     const start = this.clock.now();
-    const waitMicros = this.machine.reserve(permits);
+    const waitMicros = this.machine.reserveMicros(permits);
     const storedPermitsAfter = this.machine.snapshot().storedPermits;
 
     // Round up: waiting a little longer is allowed, waking early is not.
@@ -93,5 +94,29 @@ export class WarmupLimiter {
       return false;
     }
     return this.acquire(permits, options);
+  }
+
+  /**
+   * The wait `reserveMicros` would impose right now, in microseconds, without
+   * reserving anything.
+   *
+   * @throws RangeError if `permits` is invalid.
+   */
+  peekWaitMicros(permits = 1): number {
+    return this.machine.peekWaitMicros(permits);
+  }
+
+  /**
+   * Reserves `permits` synchronously and returns the wait in microseconds,
+   * without waiting it out.
+   *
+   * Use this to do the waiting yourself — inside a queue of your own, or
+   * outside a transaction — and to compose this limiter with a
+   * {@link Scheduler} consumer such as the pacer's queue.
+   *
+   * @throws RangeError if `permits` is invalid.
+   */
+  reserveMicros(permits = 1): number {
+    return this.machine.reserveMicros(permits);
   }
 }

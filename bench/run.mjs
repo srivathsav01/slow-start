@@ -37,7 +37,11 @@ const methodology = {
   platform: `${process.platform} ${process.arch}`,
   config: CONFIG,
   clock: 'ManualClock — simulated time, identical on every machine',
-  grantResolutionMicros: 250,
+  grantResolutionMicros: {
+    default: 250,
+    costFunction: 100,
+    note: 'Grant times are sampled by stepping the clock, so they are accurate to the step, rounded up. Figures needing more precision are asked of the limiter directly and labelled "exact".',
+  },
   note: 'Behavioural results only. Timing and memory costs are measured separately by bench/perf.mjs on a real clock.',
 };
 

@@ -83,21 +83,27 @@ export class FixedWindowLimiter {
   }
 
   async acquire(permits = 1) {
-    let waitNanos = 0n;
-    for (;;) {
-      const at = this.#clock.now() + waitNanos;
-      const index = at / this.#windowNanos;
-      if (index !== this.#windowIndex) {
-        this.#windowIndex = index;
-        this.#used = 0;
-      }
-      if (this.#used + permits <= this.#limit) {
-        this.#used += permits;
-        break;
-      }
-      // Full: move to the start of the next window and try again.
-      waitNanos = (index + 1n) * this.#windowNanos - this.#clock.now();
+    const now = this.#clock.now();
+
+    // The window only ever moves forward. Taking the index from `now` alone
+    // is what keeps the count honest: deriving it from a prospective grant
+    // time lets a later caller fall back into an earlier window and reset the
+    // counter, which admits far more than the limit.
+    const currentIndex = now / this.#windowNanos;
+    if (currentIndex > this.#windowIndex) {
+      this.#windowIndex = currentIndex;
+      this.#used = 0;
     }
-    await this.#clock.sleep(waitNanos);
+
+    // Skip to the next window until this caller fits. A single request larger
+    // than the whole limit takes a window to itself rather than looping.
+    while (this.#used > 0 && this.#used + permits > this.#limit) {
+      this.#windowIndex += 1n;
+      this.#used = 0;
+    }
+    this.#used += permits;
+
+    const startNanos = this.#windowIndex * this.#windowNanos;
+    await this.#clock.sleep(startNanos > now ? startNanos - now : 0n);
   }
 }

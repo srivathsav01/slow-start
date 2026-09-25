@@ -62,7 +62,7 @@ describe('properties (fast-check)', () => {
           // peek resyncs on a copy, so it reports the post-idle level
           // without spending anything.
           machine.peekWaitMicros(1);
-          const wait = machine.reserve(op.permits);
+          const wait = machine.reserveMicros(op.permits);
           const after = machine.snapshot();
 
           expect(wait).toBeGreaterThanOrEqual(0);
@@ -85,7 +85,7 @@ describe('properties (fast-check)', () => {
 
         for (const op of ops) {
           clock.advance(micros(op.advanceMicros));
-          machine.reserve(op.permits);
+          machine.reserveMicros(op.permits);
           const current = machine.snapshot().nextFreeTicketMicros;
           expect(current).toBeGreaterThanOrEqual(previous);
           previous = current;
@@ -103,9 +103,9 @@ describe('properties (fast-check)', () => {
           clock.advance(micros(op.advanceMicros));
           // Two reservations at the same instant: the second cannot resync,
           // so its only effect is the acquisition itself.
-          machine.reserve(1);
+          machine.reserveMicros(1);
           const before = machine.snapshot().storedPermits;
-          machine.reserve(op.permits);
+          machine.reserveMicros(op.permits);
           expect(machine.snapshot().storedPermits).toBeLessThanOrEqual(before);
         }
       }),
@@ -141,12 +141,12 @@ describe('properties (fast-check)', () => {
     fc.assert(
       fc.property(options, fc.integer({ min: 1, max: 2_000 }), (config, permits) => {
         const { clock, machine, constants } = build(config);
-        machine.reserve(permits);
+        machine.reserveMicros(permits);
 
         // Idle past the end of the reservation by a full warm-up period.
         const idleMicros = machine.snapshot().nextFreeTicketMicros + config.warmupPeriodMs * 1000;
         clock.advance(micros(Math.ceil(idleMicros)));
-        machine.reserve(1);
+        machine.reserveMicros(1);
 
         // Full again, less the single permit just taken. Some configurations
         // hold less than one permit in total, and then the pot is simply
@@ -167,7 +167,7 @@ describe('properties (fast-check)', () => {
 
         // Drive continuous demand past the warm-up period.
         const drive = (): number => {
-          const wait = Math.ceil(machine.reserve(1));
+          const wait = Math.ceil(machine.reserveMicros(1));
           clock.advance(micros(wait));
           nowMicros += wait;
           return wait;
@@ -188,7 +188,7 @@ describe('properties (fast-check)', () => {
     fc.assert(
       fc.property(options, (config) => {
         const { machine, constants } = build(config);
-        machine.reserve(1); // The first caller is free; its cost lands here.
+        machine.reserveMicros(1); // The first caller is free; its cost lands here.
         const firstCost = machine.peekWaitMicros(1);
 
         // One permit taken from the very top of the curve: its average cost
@@ -212,7 +212,7 @@ describe('properties (fast-check)', () => {
           const nextFree: number[] = [];
           for (const op of ops) {
             clock.advance(micros(op.advanceMicros));
-            waits.push(machine.reserve(op.permits));
+            waits.push(machine.reserveMicros(op.permits));
             const state = machine.snapshot();
             stored.push(state.storedPermits);
             nextFree.push(state.nextFreeTicketMicros);
@@ -234,7 +234,7 @@ describe('properties (fast-check)', () => {
           let previousNextFree = machine.snapshot().nextFreeTicketMicros;
 
           for (const permits of requests) {
-            machine.reserve(permits);
+            machine.reserveMicros(permits);
             const state = machine.snapshot();
             expect(state.storedPermits).toBeLessThanOrEqual(previousStored);
             expect(state.storedPermits).toBeGreaterThanOrEqual(0);

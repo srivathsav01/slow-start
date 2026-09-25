@@ -6,9 +6,9 @@
 // Every scenario runs on a ManualClock, so the numbers are exact properties
 // of the algorithm and identical on every machine.
 
-import { ManualClock, WarmupLimiter } from 'slow-start';
+import { ManualClock, Pacer, QueuedLimiter, WarmupLimiter } from 'slow-start';
 import { FixedRateLimiter, FixedWindowLimiter, TokenBucketLimiter } from './lib/baselines.mjs';
-import { burst, drive } from './lib/drive.mjs';
+import { burst, drive, paced as pacedArrivals } from './lib/drive.mjs';
 import { intervals, summarize, throughputSeries } from './lib/stats.mjs';
 
 /** The verified configuration from verification/config.json. */
@@ -47,6 +47,18 @@ const factories = {
       ),
     };
   },
+  // The shipped pacer, with bounds set wide so this measures pacing rather
+  // than the queue policy, which scenario 7 covers.
+  pacer: () => {
+    const clock = new ManualClock();
+    return {
+      clock,
+      limiter: new Pacer(
+        { permitsPerSecond: CONFIG.permitsPerSecond, maxQueueDelayMs: 600_000, maxQueueDepth: 5000 },
+        clock,
+      ),
+    };
+  },
   fixedWindow: () => {
     const clock = new ManualClock();
     return {
@@ -77,6 +89,16 @@ async function steadyState() {
   };
 }
 
+/**
+ * What one permit really costs when taken from a full pot, asked of the
+ * limiter rather than read off grant times that the driver's step rounds.
+ */
+function firstPermitCostMicros() {
+  const { limiter } = warmupLimiter();
+  limiter.acquire(1).catch(() => undefined); // the first caller is free
+  return limiter.peekWaitMicros(1);
+}
+
 /** 2. Cold-start burst: 400 requests at t=0 on a fresh limiter. */
 async function coldStartBurst() {
   const arrivals = burst(400);
@@ -104,7 +126,13 @@ async function coldStartBurst() {
         tokenBucket: admittedBy(bucket, 1_000_000),
       },
       firstIntervalMicros: {
-        warmup: warm[1].grantMicros - warm[0].grantMicros,
+        // Measured from grant times, so it is rounded up to the driver's step.
+        measuredAtStepMicros: warm[1].grantMicros - warm[0].grantMicros,
+        driverStepMicros: STEP_MICROS,
+        // Asked of the limiter directly, so exact: one permit taken from a
+        // full pot costs coldInterval minus half a slope step, not the cold
+        // interval itself.
+        exactFirstPermitMicros: firstPermitCostMicros(),
         coldIntervalMicros: COLD_INTERVAL_MICROS,
       },
       rampReachesStableAtMicros:
@@ -230,20 +258,17 @@ async function algorithmComparison() {
 }
 
 /**
- * 6. Warm-up versus fixed pacing.
+ * 6. Warm-up versus fixed pacing, using the shipped Pacer.
  *
  * Fixed pacing spaces callers evenly at the stable interval from the very
  * first call. It smooths a burst, but it does not ramp: a cold process is hit
  * at full rate immediately. That contrast is the whole scenario.
- *
- * Scenario 7, warm-up composed WITH pacing, needs the pacing subsystem of
- * v0.2.0 and is deliberately absent rather than mocked.
  */
 async function warmupVsPacing() {
   const arrivals = burst(300);
   const [warm, paced] = await Promise.all([
     run(factories.warmup, arrivals),
-    run(factories.fixedRate, arrivals),
+    run(factories.pacer, arrivals),
   ]);
 
   const bucketMicros = 250_000;
@@ -282,6 +307,88 @@ async function warmupVsPacing() {
 }
 
 /**
+ * 7. Warm-up composed with pacing.
+ *
+ * The warm-up limiter decides the rate; the queue enforces the bounds. Both
+ * properties at once: callers are admitted on the ramp, and callers who would
+ * wait past the bound are refused instead of queueing without limit.
+ *
+ * The contrast is against warm-up alone, where every caller waits however
+ * long the timeline says — up to 4.5 seconds for this burst.
+ */
+async function warmupComposedWithPacing() {
+  // Sustained overload rather than a single burst: 200 requests/second for
+  // six seconds against a limiter that tops out at 100/s. A burst at one
+  // instant cannot show this — everything beyond the bound is refused in the
+  // first moment and no traffic remains to ride the ramp.
+  const arrivals = pacedArrivals(1200, 5_000);
+  const MAX_QUEUE_DELAY_MS = 500;
+
+  const composed = () => {
+    const clock = new ManualClock();
+    const warm = new WarmupLimiter(CONFIG, clock);
+    return {
+      clock,
+      limiter: new QueuedLimiter(warm, { maxQueueDelayMs: MAX_QUEUE_DELAY_MS }, clock),
+    };
+  };
+
+  const [withBounds, unbounded] = await Promise.all([
+    run(composed, arrivals),
+    run(factories.warmup, arrivals),
+  ]);
+
+  const admitted = withBounds.filter((record) => record.refused === undefined);
+  const refused = withBounds.filter((record) => record.refused !== undefined);
+  const longestWait = (records) =>
+    Math.max(...records.map((record) => record.grantMicros - record.atMicros));
+
+  const bucketMicros = 250_000;
+  const composedSeries = throughputSeries(admitted, bucketMicros);
+  const unboundedSeries = throughputSeries(unbounded, bucketMicros);
+  const length = Math.max(composedSeries.length, unboundedSeries.length);
+
+  const rows = [];
+  for (let index = 0; index < length; index += 1) {
+    rows.push([
+      index * bucketMicros,
+      composedSeries[index]?.permitsPerSecond ?? 0,
+      unboundedSeries[index]?.permitsPerSecond ?? 0,
+    ]);
+  }
+
+  return {
+    name: 'warmup-with-pacing',
+    title: '7. Warm-up composed with pacing — ramping rate, bounded queue',
+    columns: ['t_micros', 'composed_pps', 'warmup_alone_pps'],
+    rows,
+    summary: {
+      maxQueueDelayMs: MAX_QUEUE_DELAY_MS,
+      requests: arrivals.length,
+      arrivalRatePerSecond: 200,
+      composed: {
+        admitted: admitted.length,
+        refused: refused.length,
+        refusalReasons: [...new Set(refused.map((record) => record.refused))],
+        longestWaitMicros: longestWait(admitted),
+        meanWaitMicros:
+          admitted.reduce((sum, record) => sum + (record.grantMicros - record.atMicros), 0) /
+          admitted.length,
+      },
+      warmupAlone: {
+        admitted: unbounded.length,
+        refused: 0,
+        longestWaitMicros: longestWait(unbounded),
+        meanWaitMicros:
+          unbounded.reduce((sum, record) => sum + (record.grantMicros - record.atMicros), 0) /
+          unbounded.length,
+      },
+      note: 'Composition costs one line: new QueuedLimiter(warmupLimiter, bounds, clock). Both admit at the warm-up rate; the bounded one refuses callers it cannot serve within the bound instead of letting waits grow without limit.',
+    },
+  };
+}
+
+/**
  * Not a §13.1 scenario: the data behind the §13.3 cost-function graph.
  *
  * Measured, not computed — the x values are the stored-permit levels the
@@ -293,7 +400,10 @@ async function costFunction() {
   for (let index = 0; index < records.length - 1; index += 1) {
     const stored = records[index].result?.storedPermitsAfter;
     if (stored === undefined) continue;
-    rows.push([stored, records[index + 1].grantMicros - records[index].grantMicros]);
+    // The gap after a grant is the cost that caller imposed, computed at the
+    // pot level BEFORE it spent — one permit above what it left behind.
+    // Pairing the gap with `storedPermitsAfter` would shift the curve by one.
+    rows.push([stored + records[index].permits, records[index + 1].grantMicros - records[index].grantMicros]);
   }
 
   return {
@@ -317,5 +427,6 @@ export const scenarios = [
   repeatedCycles,
   algorithmComparison,
   warmupVsPacing,
+  warmupComposedWithPacing,
   costFunction,
 ];

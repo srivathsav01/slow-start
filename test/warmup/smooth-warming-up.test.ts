@@ -32,7 +32,7 @@ function sustainedDemand(clock: ManualClock, limiter: SmoothWarmingUp, calls: nu
   const grants: number[] = [];
   let now = 0;
   for (let i = 0; i < calls; i++) {
-    const wait = limiter.reserve();
+    const wait = limiter.reserveMicros();
     grants.push(now + wait);
     const step = Math.ceil(wait);
     clock.advance(micros(step));
@@ -51,8 +51,8 @@ describe('SmoothWarmingUp', () => {
       const clock = new ManualClock();
       clock.advance(micros(7_000_000));
       const limiter = new SmoothWarmingUp(OPTIONS, clock);
-      expect(limiter.reserve()).toBe(0);
-      expectWithin(limiter.reserve(), 29_933 + 1 / 3, TOLERANCE);
+      expect(limiter.reserveMicros()).toBe(0);
+      expectWithin(limiter.reserveMicros(), 29_933 + 1 / 3, TOLERANCE);
     });
 
     it('rejects invalid options', () => {
@@ -73,7 +73,7 @@ describe('SmoothWarmingUp', () => {
       clock.advance(micros(vector.nowMicros - clockMicros));
       clockMicros = vector.nowMicros;
 
-      const grant = vector.nowMicros + limiter.reserve(vector.permits);
+      const grant = vector.nowMicros + limiter.reserveMicros(vector.permits);
       const state = limiter.snapshot();
 
       expect.soft(Math.abs(grant - vector.expectGrantMicros), `${at}: grant`).toBeLessThanOrEqual(
@@ -94,13 +94,13 @@ describe('SmoothWarmingUp', () => {
   describe('reserve', () => {
     it('reserves one permit by default', () => {
       const { limiter } = setup();
-      limiter.reserve();
+      limiter.reserveMicros();
       expect(limiter.snapshot().storedPermits).toBe(299);
     });
 
     it('gives three synchronous calls strictly increasing waits', () => {
       const { limiter } = setup();
-      const waits = [limiter.reserve(), limiter.reserve(), limiter.reserve()];
+      const waits = [limiter.reserveMicros(), limiter.reserveMicros(), limiter.reserveMicros()];
       expect(waits[0]).toBe(0);
       expect(waits[1]).toBeGreaterThan(0);
       expect(waits[2]).toBeGreaterThan(waits[1] ?? Infinity);
@@ -108,38 +108,38 @@ describe('SmoothWarmingUp', () => {
 
     it('ignores time below one microsecond', () => {
       const { clock, limiter } = setup();
-      limiter.reserve();
+      limiter.reserveMicros();
       clock.advance(999n);
       // 999 ns rounds down to 0 µs, so the second caller still waits the full cost.
-      expectWithin(limiter.reserve(), 29_933 + 1 / 3, TOLERANCE);
+      expectWithin(limiter.reserveMicros(), 29_933 + 1 / 3, TOLERANCE);
     });
 
     it('takes n exactly equal to the stored permits', () => {
       const { limiter } = setup();
-      expect(limiter.reserve(300)).toBe(0);
+      expect(limiter.reserveMicros(300)).toBe(0);
       expect(limiter.snapshot().storedPermits).toBe(0);
       // Trapezoid (3,000,000) + rectangle (150 × 10,000).
-      expectWithin(limiter.reserve(), 4_500_000, TOLERANCE);
+      expectWithin(limiter.reserveMicros(), 4_500_000, TOLERANCE);
     });
 
     it('takes n far beyond maxPermits, charging fresh permits at the stable interval', () => {
       const { limiter } = setup();
-      expect(limiter.reserve(1_000)).toBe(0);
+      expect(limiter.reserveMicros(1_000)).toBe(0);
       expect(limiter.snapshot().storedPermits).toBe(0);
-      expectWithin(limiter.reserve(), 4_500_000 + 700 * 10_000, TOLERANCE);
+      expectWithin(limiter.reserveMicros(), 4_500_000 + 700 * 10_000, TOLERANCE);
     });
 
     describe('rejects invalid permits and leaves the state unchanged', () => {
       it.each([0, -1, 1.5, NaN, Infinity, -Infinity, 2 ** 53])('%s', (permits) => {
         const { clock, limiter } = setup();
-        limiter.reserve();
+        limiter.reserveMicros();
         clock.advance(micros(5_000));
         const before = limiter.snapshot();
 
-        expect(() => limiter.reserve(permits)).toThrow(
+        expect(() => limiter.reserveMicros(permits)).toThrow(
           `permits must be a positive integer, got ${String(permits)}`,
         );
-        expect(() => limiter.reserve(permits)).toThrow(RangeError);
+        expect(() => limiter.reserveMicros(permits)).toThrow(RangeError);
         expect(limiter.snapshot()).toEqual(before);
       });
     });
@@ -158,7 +158,7 @@ describe('SmoothWarmingUp', () => {
 
     it('accepts exactly the limit, and the timeline stays exact', () => {
       const { limiter } = setup();
-      expect(limiter.reserve(LIMIT)).toBe(0);
+      expect(limiter.reserveMicros(LIMIT)).toBe(0);
 
       const { nextFreeTicketMicros } = limiter.snapshot();
       expect(Number.isSafeInteger(Math.trunc(nextFreeTicketMicros))).toBe(true);
@@ -168,8 +168,8 @@ describe('SmoothWarmingUp', () => {
 
     it.each([LIMIT + 1, 2 ** 52, Number.MAX_SAFE_INTEGER])('rejects %s', (permits) => {
       const { limiter } = setup();
-      expect(() => limiter.reserve(permits)).toThrow(RangeError);
-      expect(() => limiter.reserve(permits)).toThrow(
+      expect(() => limiter.reserveMicros(permits)).toThrow(RangeError);
+      expect(() => limiter.reserveMicros(permits)).toThrow(
         `permits must be at most ${String(LIMIT)} at this rate, got ${String(permits)}`,
       );
       expect(limiter.snapshot()).toEqual({ storedPermits: 300, nextFreeTicketMicros: 0 });
@@ -188,8 +188,8 @@ describe('SmoothWarmingUp', () => {
       );
       const slowLimit = limitFor(1_000_000, 1_000_000);
 
-      expect(() => slow.reserve(slowLimit + 1)).toThrow(RangeError);
-      expect(slow.reserve(slowLimit)).toBe(0);
+      expect(() => slow.reserveMicros(slowLimit + 1)).toThrow(RangeError);
+      expect(slow.reserveMicros(slowLimit)).toBe(0);
       // A slower rate means a smaller ceiling: each permit costs more time.
       expect(slowLimit).toBeLessThan(LIMIT);
     });
@@ -201,17 +201,17 @@ describe('SmoothWarmingUp', () => {
         { permitsPerSecond: 1e-12, warmupPeriodMs: 1000 },
         new ManualClock(),
       );
-      expect(glacial.reserve(1)).toBe(0);
-      expect(() => glacial.reserve(2)).toThrow(RangeError);
+      expect(glacial.reserveMicros(1)).toBe(0);
+      expect(() => glacial.reserveMicros(2)).toThrow(RangeError);
     });
   });
 
   describe('peekWaitMicros', () => {
     it('returns what reserve would return', () => {
       const { clock, limiter } = setup();
-      limiter.reserve(40);
+      limiter.reserveMicros(40);
       clock.advance(micros(250_000));
-      expect(limiter.peekWaitMicros(7)).toBe(limiter.reserve(7));
+      expect(limiter.peekWaitMicros(7)).toBe(limiter.reserveMicros(7));
     });
 
     it('leaves the state untouched, however often it is called', () => {
@@ -275,23 +275,23 @@ describe('SmoothWarmingUp', () => {
 
     it('re-cools fully after a warm-up period of idleness', () => {
       const { clock, limiter } = setup();
-      limiter.reserve(300); // Empty the pot; the timeline now ends at 4,500,000 µs.
+      limiter.reserveMicros(300); // Empty the pot; the timeline now ends at 4,500,000 µs.
       clock.advance(micros(4_500_000 + 3_000_000));
-      expect(limiter.reserve()).toBe(0);
+      expect(limiter.reserveMicros()).toBe(0);
       expectWithin(limiter.snapshot().storedPermits, 299, TOLERANCE);
     });
 
     it('re-cools partly after half a warm-up period of idleness', () => {
       const { clock, limiter } = setup();
-      limiter.reserve(300);
+      limiter.reserveMicros(300);
       clock.advance(micros(4_500_000 + 1_500_000));
-      limiter.reserve();
+      limiter.reserveMicros();
       expectWithin(limiter.snapshot().storedPermits, 149, TOLERANCE);
     });
 
     it('does not gain permits while the clock stands still', () => {
       const { limiter } = setup();
-      for (let i = 0; i < 50; i++) limiter.reserve();
+      for (let i = 0; i < 50; i++) limiter.reserveMicros();
       expect(limiter.snapshot().storedPermits).toBe(250);
     });
   });
@@ -311,7 +311,7 @@ describe('SmoothWarmingUp', () => {
       const states: WarmupState[] = [limiter.snapshot()];
       for (const [advance, permits] of SCRIPT) {
         clock.advance(micros(advance));
-        waits.push(limiter.reserve(permits));
+        waits.push(limiter.reserveMicros(permits));
         states.push(limiter.snapshot());
       }
       return { waits, states };

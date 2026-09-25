@@ -171,6 +171,32 @@ function write(name, svg) {
   );
 }
 
+// 4. Composition — the same ramp, but bounded.
+{
+  const { rows } = readCsv('warmup-with-pacing');
+  write(
+    'warmup-with-pacing',
+    lineChart({
+      title: 'Overload for 6 s: same admitted rate, but no backlog afterwards',
+      xLabel: 'time (seconds)',
+      yLabel: 'permits admitted per second',
+      series: [
+        {
+          label: 'warm-up alone (unbounded)',
+          points: rows.map((row) => [row[0] / 1_000_000, row[2]]),
+        },
+        {
+          // Dashed and drawn second: it sits exactly on the other line until
+          // traffic stops, and would otherwise be invisible beneath it.
+          label: 'warm-up + 500 ms bound',
+          points: rows.map((row) => [row[0] / 1_000_000, row[1]]),
+          dashed: true,
+        },
+      ],
+    }),
+  );
+}
+
 // 3. Cold-start comparison — the behavioural difference, overlaid.
 {
   const { rows } = readCsv('algorithm-comparison');

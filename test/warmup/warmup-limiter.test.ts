@@ -1,6 +1,7 @@
 import { setImmediate } from 'node:timers';
 import { describe, expect, it } from 'vitest';
 import { ManualClock } from '../../src/clock/manual-clock.js';
+import type { Scheduler } from '../../src/core/scheduler.js';
 import type { WarmupOptions } from '../../src/warmup/constants.js';
 import { WarmupLimiter } from '../../src/warmup/warmup-limiter.js';
 
@@ -305,6 +306,49 @@ describe('WarmupLimiter', () => {
       const controller = new AbortController();
       controller.abort();
       await expect(limiter.tryAcquire(1, 0, { signal: controller.signal })).rejects.toThrow();
+    });
+  });
+
+  // The seam that lets the pacer's queue hold warm-up callers (spec §9.5).
+  describe('as a Scheduler', () => {
+    it('satisfies the interface', () => {
+      const scheduler: Scheduler = new WarmupLimiter(OPTIONS, new ManualClock());
+      expect(typeof scheduler.peekWaitMicros(1)).toBe('number');
+      expect(typeof scheduler.reserveMicros(1)).toBe('number');
+    });
+
+    it('peeks without moving the timeline', async () => {
+      const { limiter } = setup();
+      const peeked = [limiter.peekWaitMicros(), limiter.peekWaitMicros(), limiter.peekWaitMicros()];
+      expect(peeked).toEqual([0, 0, 0]);
+      // Three peeks changed nothing: the first caller still goes immediately.
+      expect((await limiter.acquire()).waitedMs).toBe(0);
+    });
+
+    it('reserves without waiting, moving the timeline exactly as acquire does', () => {
+      const { clock, limiter } = setup();
+      expect(limiter.reserveMicros()).toBe(0);
+
+      // Reserved synchronously: the caller waits however it likes, or not yet.
+      const waitMicros = limiter.reserveMicros();
+      expect(waitMicros).toBeCloseTo(29_933.333, 2);
+
+      // Wait it out by hand; the timeline is where the golden trace says.
+      // The clock lands at 29,933,334 ns, which the limiter reads as 29,933
+      // whole microseconds, so the next caller owes the remainder to 59,733.
+      clock.advance(BigInt(Math.ceil(waitMicros * 1000)));
+      expect(limiter.peekWaitMicros()).toBeCloseTo(59_733.333 - 29_933, 2);
+    });
+
+    it('defaults to one permit', () => {
+      const { limiter } = setup();
+      expect(limiter.peekWaitMicros()).toBe(limiter.peekWaitMicros(1));
+    });
+
+    it.each([0, -1, 1.5, NaN])('rejects permits = %s', (permits) => {
+      const { limiter } = setup();
+      expect(() => limiter.peekWaitMicros(permits)).toThrow(RangeError);
+      expect(() => limiter.reserveMicros(permits)).toThrow(RangeError);
     });
   });
 

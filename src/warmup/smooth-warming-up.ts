@@ -72,7 +72,7 @@ export class SmoothWarmingUp {
    * @throws RangeError if `permits` is not a positive safe integer, or is
    * too large for its cost to be exact at this rate.
    */
-  reserve(permits = 1): number {
+  reserveMicros(permits = 1): number {
     this.checkPermit(permits);
     const now = this.nowMicros();
     const grant = reserve(this.state, this.constants, permits, now);

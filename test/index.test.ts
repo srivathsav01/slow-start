@@ -6,11 +6,27 @@ describe('public surface', () => {
   // Adding a name here is a minor release; removing one is breaking. This
   // test exists so neither happens by accident.
   it('exports exactly the documented names', () => {
-    expect(Object.keys(publicApi).sort()).toEqual(['ManualClock', 'SystemClock', 'WarmupLimiter']);
+    expect(Object.keys(publicApi).sort()).toEqual([
+      'ManualClock',
+      'Pacer',
+      'QueuedLimiter',
+      'RateLimitRejectedError',
+      'SystemClock',
+      'WarmupLimiter',
+    ]);
   });
 
   it('keeps the algorithm internals unexported', () => {
-    for (const name of ['SmoothWarmingUp', 'reserve', 'resync', 'deriveConstants']) {
+    for (const name of [
+      'SmoothWarmingUp',
+      'reserve',
+      'resync',
+      'deriveConstants',
+      'WaitQueue',
+      'reserveSlot',
+      'checkBounds',
+      'derivePacingConstants',
+    ]) {
       expect(publicApi).not.toHaveProperty(name);
     }
   });

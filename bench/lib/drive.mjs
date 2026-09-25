@@ -32,6 +32,7 @@ export async function drive(clock, limiter, arrivals, options = {}) {
     permits: arrival.permits ?? 1,
     grantMicros: Number.NaN,
     result: undefined,
+    refused: undefined,
   }));
 
   let nowMicros = 0;
@@ -45,12 +46,19 @@ export async function drive(clock, limiter, arrivals, options = {}) {
       const record = records[nextToIssue];
       nextToIssue += 1;
       pending += 1;
-      void limiter.acquire(record.permits).then((result) => {
-        // Read the clock here: this is when the caller was released.
-        record.grantMicros = nowMicros;
-        record.result = result;
-        pending -= 1;
-      });
+      void limiter.acquire(record.permits).then(
+        (result) => {
+          // Read the clock here: this is when the caller was released.
+          record.grantMicros = nowMicros;
+          record.result = result;
+          pending -= 1;
+        },
+        (error) => {
+          // A bounded limiter refuses rather than queueing without limit.
+          record.refused = error?.reason ?? 'error';
+          pending -= 1;
+        },
+      );
     }
 
     // 2. Let every caller whose wait has elapsed resolve.

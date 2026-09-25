@@ -160,6 +160,67 @@ If the signal is already aborted, the call rejects **without reserving** — not
 
 That is the only consistent choice. The reservation already moved the timeline forward, and callers who arrived afterwards were given grant times computed from that. Refunding it would either release them earlier than they were promised — breaking the guarantee that nobody is granted before their computed time — or require rewriting grant times already handed out.
 
+## Pacing and queue bounds
+
+`WarmupLimiter` waits as long as its timeline says — which for a large burst can be seconds, and every waiting caller costs about 2 KB. Two classes address that.
+
+### `Pacer` — even spacing, no ramp
+
+```ts
+import { Pacer } from 'slow-start';
+
+const pacer = new Pacer({ permitsPerSecond: 100, maxQueueDelayMs: 500 });
+await pacer.acquire();
+```
+
+It admits one caller per interval, refusing anyone who would wait too long. It does **not** ramp: idle time earns nothing, so a cold process is hit at full rate. Use it to smooth a burst, not to protect a cold cache.
+
+### `QueuedLimiter` — bounds around any limiter
+
+```ts
+import { QueuedLimiter, SystemClock, WarmupLimiter } from 'slow-start';
+
+const clock = new SystemClock();
+const warm = new WarmupLimiter({ permitsPerSecond: 100, warmupPeriodMs: 3000 }, clock);
+const limiter = new QueuedLimiter(warm, { maxQueueDelayMs: 500 }, clock);
+
+await limiter.acquire();   // warm-up sets the rate; the queue sets the limits
+```
+
+Warm-up decides *when* each caller may go; the queue decides *whether* it may wait at all. Pass both the same clock.
+
+| Option | Default | What it does |
+|---|---|---|
+| `maxQueueDelayMs` | `1000` | Refuse a caller whose wait would exceed this. The control you should set |
+| `maxQueueDepth` | `1000` | Hard cap on callers waiting at once — about 2 MB of pending callers |
+
+Refusals throw a `RateLimitRejectedError` carrying `reason` (`'delay'` or `'depth'`), `waitMs` and `queueDepth`:
+
+```ts
+try {
+  await limiter.acquire();
+} catch (error) {
+  if (error instanceof RateLimitRejectedError) {
+    res.status(503).set('Retry-After', String(Math.ceil(error.waitMs / 1000))).end();
+  }
+}
+```
+
+A refusal changes nothing: no reservation is made and the timeline does not move, so a flood of refused callers cannot delay the ones already queued.
+
+### A per-call timeout may only tighten the bound
+
+```ts
+const limiter = new QueuedLimiter(warm, { maxQueueDelayMs: 1000 });
+await limiter.acquire(1, { timeoutMs: 60_000 });   // still refused at 1000 ms
+```
+
+**A per-call `timeoutMs` can lower the limit for that call, never raise it.** The effective limit is `min(maxQueueDelayMs, timeoutMs)`. The standing bound is what caps the memory held by queued callers, so no individual call is allowed to opt out of it — and the error message quotes the limit that actually applied, not the one you asked for.
+
+### One timer, not one per caller
+
+Waiting callers share a **single** timer armed for whoever is next. That's sound because grant times only ever move forward, so a new arrival can never be due before someone already queued. The test suite asserts it directly: with 100 callers queued, at most **one** timer is ever live, and the run arms 99 in sequence rather than 100 at once.
+
 ## Testing your own code
 
 Every time-dependent part of this library reads time through an injected `Clock`, and `ManualClock` is exported for your tests. Time moves only when you move it, so a three-second warm-up takes no real time and never flakes:
@@ -220,10 +281,12 @@ Full derivation, the twelve golden vectors, and the comparison against Guava are
 
 | Scenario | Result |
 |---|---|
-| Steady state | Intervals of exactly 10,000 µs; mean, p50, p95 and p99 identical; 0.00% error from the configured rate |
-| Cold-start burst | First interval exactly 30,000 µs (the cold interval); full rate first reached at exactly 3,000,000 µs (the warm-up period) |
-| Idle → burst | After a full warm-up period of idleness, the second burst's grant times match the first's to within 0 µs |
-| 10 burst/idle cycles | Zero drift |
+| Steady state | Intervals of 10,000 µs; mean, p50, p95 and p99 identical; 0.00% error from the configured rate |
+| Cold-start burst | The first permit costs **29,933 µs**, within 0.3% of the 30 ms cold interval; full rate is reached in the 3.0 s bucket — the warm-up period |
+| Idle → burst | After a full warm-up period of idleness, the second burst's grant times match the first's exactly |
+| 10 burst/idle cycles | No drift between cycles |
+
+**On precision:** grant times are sampled by advancing a simulated clock in 250 µs steps, so these figures are accurate to that step, not to the microsecond. Where exactness matters, the test suite is the authority — it replays the golden vectors through the limiter and agrees within 0.01 µs. The 29,933 µs figure above comes from asking the limiter directly rather than from sampled grant times, which is why it is not a round number: one permit taken from a full pot costs the cold interval minus half a slope step.
 
 Cost measurements depend on the machine, and are reported with it. On an Intel i5-7600T, Node 24.14, Windows 10:
 
@@ -238,9 +301,18 @@ The Windows lateness is a property of that platform, not of this library: Window
 
 Resolving *late* is unavoidable on any runtime, and the amount depends on your OS and how busy the box is. Resolving **early** would be a correctness bug, because it admits traffic faster than configured. CI asserts on every run that it never happens; the durations are reported, not asserted, since a threshold on a shared runner would flake rather than inform.
 
+![Under six seconds of overload both admit at the same ramping rate; the unbounded one then drains a backlog for another seven seconds](https://raw.githubusercontent.com/srivathsav01/slow-start/main/bench/results/warmup-with-pacing.svg)
+
 Methodology, raw CSVs and the machine details are in [`bench/results/`](bench/results/).
 
-Six of the seven scenarios the design called for are covered. The seventh — warm-up composed *with* pacing — needs the pacing scheduler, and arrives with it in v0.2.0. A mock pacer written for the benchmark would measure the mock, not the package.
+All seven scenarios the design called for are covered, including warm-up composed with pacing. Sustained overload — 200 requests per second for six seconds, into a limiter that tops out at 100/s:
+
+| | Admitted | Refused | Mean wait | Longest wait |
+|---|---|---|---|---|
+| Warm-up alone | 1200 | 0 | 4.43 s | 7.50 s |
+| Warm-up + a 500 ms queue bound | 500 | 700 | 0.49 s | 0.50 s |
+
+Both admit at exactly the same rate while traffic flows — composition doesn't change the rate model. The difference is what happens to the excess: unbounded, it becomes a backlog that takes until 13.2 s to drain, serving callers who gave up long ago. Bounded, those callers are told immediately.
 
 ## Scope and deviations
 
@@ -254,10 +326,9 @@ Six of the seven scenarios the design called for are covered. The seventh — wa
 
 ## Roadmap
 
-`v0.1.0` is the warm-up limiter, complete and verified. Planned next:
-
-- **v0.2.0 — pacing.** A virtual-slot scheduler with a queue policy (`maxQueueDelay`, `maxQueueDepth`) and a single-timer optimisation, composable with warm-up.
-- **v0.3.0 — metrics and adapters.** A rolling counter window as an independent subsystem, plus Express, Fastify and Koa middleware.
+- **v0.1.0** — the warm-up limiter, verified against golden vectors.
+- **v0.2.0** — pacing: a virtual-slot scheduler, queue bounds, a single-timer wait queue, and composition with warm-up.
+- **v0.3.0, planned** — metrics and adapters: a rolling counter window as an independent subsystem, plus Express, Fastify and Koa middleware.
 
 ## Licence
 

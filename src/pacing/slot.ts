@@ -1,5 +1,5 @@
 import { RateLimitRejectedError } from '../core/errors.js';
-import type { PacingConstants } from './pacing-constants.js';
+import type { PacingConstants, QueueBounds } from './pacing-constants.js';
 
 /** The pacer's entire scheduling state: one timestamp, whatever the load. */
 export interface PacingState {
@@ -50,7 +50,7 @@ export function reserveSlot(
 export function checkBounds(
   waitMicros: number,
   queueDepth: number,
-  constants: PacingConstants,
+  constants: QueueBounds,
   perCallTimeoutMicros = Infinity,
 ): void {
   // Depth first: a full queue is the more fundamental refusal, and reporting
