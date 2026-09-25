@@ -67,6 +67,24 @@ Here are 300 requests arriving at once, through four algorithms on the same time
 
 The token bucket and fixed window admitting the whole burst is not a defect — it is what they are for. Pick the shape your workload needs.
 
+### Where this fits in the npm ecosystem
+
+Node's rate-limiting ecosystem is mature and well maintained. This package is not a replacement for any of it — it implements one model the others don't.
+
+| Package | What it does | Warm-up ramp |
+|---|---|---|
+| [`limiter`](https://www.npmjs.com/package/limiter) | Token bucket, general purpose | No |
+| [`rate-limiter-flexible`](https://www.npmjs.com/package/rate-limiter-flexible) | Many strategies, many backends (Redis, Postgres, Mongo), DoS and brute-force protection | No |
+| [`bottleneck`](https://www.npmjs.com/package/bottleneck) | Distributed job scheduling with concurrency and throttling | No |
+| [`rolling-rate-limiter`](https://www.npmjs.com/package/rolling-rate-limiter) | Rolling window, in memory or Redis | No |
+| [`express-rate-limit`](https://www.npmjs.com/package/express-rate-limit), [`hono-rate-limiter`](https://www.npmjs.com/package/hono-rate-limiter) | HTTP middleware, per-IP limits | No |
+| [`throttlekit`](https://www.npmjs.com/package/throttlekit) | Proven overshoot bounds, one store across memory/Redis/Postgres | No |
+| **slow-start** | One model: Guava's smooth warm-up, with a deterministic clock | Yes |
+
+If you need distributed state, many backends, per-IP HTTP middleware or job scheduling, **use one of the above** — they do those things well and this package does not do them at all. Reach here only when the specific thing you want is a rate that starts low after idleness and ramps.
+
+The honest claim: Guava/Sentinel-style smooth warm-up appears underrepresented on npm relative to token bucket, GCRA, fixed-window and concurrency limiting. That's a statement about what packages advertise, checked by searching npm for *warmup rate limiter*, *smooth warming up*, *cold start limiter* and *guava rate limiter*, and reading the READMEs of the packages above (September 2026, none mentions warm-up or cold start). It is not a claim that nothing else can do it: several of these are flexible enough to be driven that way by hand.
+
 Pacing alone is not the same thing either. A fixed pacer spaces callers evenly from the very first call, which smooths the burst but still hits a cold process at full rate:
 
 | | First interval | Last interval | Admitted in the first second |
@@ -163,6 +181,27 @@ await second;                         // now it resolves
 
 ## The algorithm
 
+### Provenance
+
+```
+Google Guava — SmoothRateLimiter.SmoothWarmingUp (Java, Apache-2.0)
+        │  the stored-permit model: permits accumulated while idle
+        │  cost more to acquire than permits acquired under load
+        ▼
+Alibaba Sentinel — WarmUpController (Java, Apache-2.0)
+        │  the same model for QPS admission control;
+        │  introduced a configurable coldFactor
+        ▼
+slow-start (TypeScript)
+           the published algorithm, implemented from its equations and
+           documented reasoning rather than ported, with clock injection,
+           golden-vector verification and property-based validation
+```
+
+Both upstream projects are Apache-2.0, as is this one. The one deliberate difference from Guava is that `coldFactor` is configurable, following Sentinel.
+
+### How it works
+
 The implementation follows Google Guava's `SmoothWarmingUp`, restated and verified independently rather than ported.
 
 The limiter keeps a pot of **stored permits**, which fills while it is idle and drains as callers take them. Contrary to a token bucket, a *full* pot means *cold*: permits taken from the top of the pot cost more time than permits taken from the bottom.
@@ -200,6 +239,8 @@ The Windows lateness is a property of that platform, not of this library: Window
 Resolving *late* is unavoidable on any runtime, and the amount depends on your OS and how busy the box is. Resolving **early** would be a correctness bug, because it admits traffic faster than configured. CI asserts on every run that it never happens; the durations are reported, not asserted, since a threshold on a shared runner would flake rather than inform.
 
 Methodology, raw CSVs and the machine details are in [`bench/results/`](bench/results/).
+
+Six of the seven scenarios the design called for are covered. The seventh — warm-up composed *with* pacing — needs the pacing scheduler, and arrives with it in v0.2.0. A mock pacer written for the benchmark would measure the mock, not the package.
 
 ## Scope and deviations
 

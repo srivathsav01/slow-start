@@ -1,3 +1,8 @@
+// Derived constants of Guava's SmoothRateLimiter.SmoothWarmingUp (Apache-2.0),
+// with the configurable coldFactor introduced by Alibaba Sentinel's
+// WarmUpController (Apache-2.0). Derived from the published algorithm and its
+// documented reasoning, not ported from either source. See spec §5.3.
+
 import { requireFiniteAbove } from '../core/validation-helper.js';
 
 export interface WarmupOptions {

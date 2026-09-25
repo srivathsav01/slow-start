@@ -1,3 +1,7 @@
+// The SmoothWarmingUp state machine, after Google Guava's
+// SmoothRateLimiter.SmoothWarmingUp (Apache-2.0) and Alibaba Sentinel's
+// WarmUpController (Apache-2.0), which made coldFactor configurable.
+
 import type { Clock } from '../clock/clock.js';
 import { deriveConstants, type WarmupConstants, type WarmupOptions } from './constants.js';
 import { reserve } from './reserve.js';
