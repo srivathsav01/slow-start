@@ -339,6 +339,33 @@ describe('Pacer', () => {
       expect(clock.total).toBeLessThanOrEqual(101);
     });
 
+    // Invariant 8 under tight spacing. At 10 ms apart, a drain that releases
+    // a millisecond or two early overtakes nobody and goes unnoticed; at 1 ms
+    // apart it releases the next caller early immediately.
+    it('releases nobody early when grants are only 1 ms apart', async () => {
+      const clock = new ManualClock();
+      const pacer = new Pacer(
+        { permitsPerSecond: 1000, maxQueueDelayMs: 60_000, maxQueueDepth: 1000 },
+        clock,
+      );
+
+      const calls = Array.from({ length: 20 }, () => track(pacer.acquire()));
+      await flush();
+
+      for (let index = 1; index < calls.length; index++) {
+        const grantMicros = index * 1000;
+        clock.advance(micros(grantMicros - 1) - clock.now());
+        await flush();
+        expect(calls[index]?.settled, `caller ${String(index)} at ${String(grantMicros)} us`).toBe(
+          false,
+        );
+
+        clock.advance(micros(1));
+        await flush();
+        expect(calls[index]?.settled).toBe(true);
+      }
+    });
+
     it('releases everyone due when the clock jumps past several slots', async () => {
       const { clock, pacer } = setup();
       const calls = Array.from({ length: 10 }, () => track(pacer.acquire()));
