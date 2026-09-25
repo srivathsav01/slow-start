@@ -53,3 +53,42 @@ jobs:
       - run: npm test
       - run: npm run check:package
       - run: npm run test:smoke
+
+  perf:
+    name: Cost measurements (Linux)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      # --expose-gc so the memory figures are not inflated by uncollected
+      # garbage. npm passes the flag through to the script's node process.
+      - name: Measure
+        run: npm run bench:perf
+
+      # The only assertion: a timer must never fire early (invariant 8).
+      # The durations themselves are informational — a shared CI runner is
+      # noisy, and a threshold on them would flake, not inform.
+      - name: Timers are never early
+        run: |
+          node -e '
+            const { timerAccuracy } = require("./bench/results/perf.json");
+            if (!timerAccuracy.neverEarly) {
+              console.error("A sleep resolved early:", timerAccuracy);
+              process.exit(1);
+            }
+            console.log("never early; median lateness",
+              timerAccuracy.lateByMicros.p50, "us");
+          '
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: perf-linux
+          path: bench/results/perf.json
