@@ -8,6 +8,8 @@ A rate limiter that **warms up**: it admits traffic slowly when it has been idle
 
 Zero dependencies. TypeScript, ESM and CommonJS. Node 22+.
 
+**Node only.** Time comes from `process.hrtime.bigint()`, so the default clock does not exist in a browser. Bundlers resolve and build the package fine; it is the runtime that needs Node. (A browser *can* run it if you inject your own `Clock` — see [Testing your own code](#testing-your-own-code) — but that is a testing trick, not a supported target.)
+
 ```
 npm install slow-start
 ```
