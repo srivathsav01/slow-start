@@ -1,5 +1,9 @@
 # slow-start
 
+[![npm](https://img.shields.io/npm/v/slow-start)](https://www.npmjs.com/package/slow-start)
+[![CI](https://github.com/srivathsav01/slow-start/actions/workflows/ci.yml/badge.svg)](https://github.com/srivathsav01/slow-start/actions/workflows/ci.yml)
+[![license](https://img.shields.io/npm/l/slow-start)](LICENSE)
+
 A rate limiter that **warms up**: it admits traffic slowly when it has been idle, and reaches its configured rate only after a period of sustained demand.
 
 ![Warm-up curve: throughput ramps from 33.3 to 100 permits per second over three seconds](https://raw.githubusercontent.com/srivathsav01/slow-start/main/bench/results/warmup-curve.svg)
