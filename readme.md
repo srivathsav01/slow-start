@@ -185,10 +185,13 @@ Cost measurements depend on the machine, and are reported with it. On an Intel i
 | Measurement | Value |
 |---|---|
 | Limiter work per acquisition | **266 ns** (436 ns measured, minus a 170 ns no-op baseline) |
-| Timer accuracy | **Never early** across 200 samples. Late by a median of 4.1 ms, p99 15.8 ms |
+| Timer accuracy, Windows | **Never early** across 200 samples. Late by a median of 4.1 ms, p99 15.8 ms |
+| Timer accuracy, Linux (GitHub Actions, Ubuntu, Node 24) | **Never early.** Late by a median of **123 µs** |
 | Memory per *waiting* caller | ~2.0 KB, most of it V8's async-frame overhead: a bare unresolved promise is 56 B, a sleep alone is 960 B |
 
-The lateness figure is a Windows property, not a library one: Windows schedules timers on a roughly 15.6 ms tick unless a process raises the resolution, so short sleeps land on that tick. Expect around 1 ms on Linux. Resolving *late* is unavoidable on any runtime; resolving **early** would be a correctness bug, and the suite asserts it never happens.
+The Windows lateness is a property of that platform, not of this library: Windows schedules timers on a roughly 15.6 ms tick unless a process raises the resolution, so short sleeps land on that tick. The same measurement on Linux is **33× tighter** — 123 µs against 4.1 ms — on a shared CI runner, which is a pessimistic environment for timing.
+
+Resolving *late* is unavoidable on any runtime, and the amount depends on your OS and how busy the box is. Resolving **early** would be a correctness bug, because it admits traffic faster than configured. CI asserts on every run that it never happens; the durations are reported, not asserted, since a threshold on a shared runner would flake rather than inform.
 
 Methodology, raw CSVs and the machine details are in [`bench/results/`](bench/results/).
 

@@ -1,32 +1,36 @@
 {
   "name": "slow-start",
-  "version": "0.0.0",
+  "version": "0.1.0-rc.1",
   "description": "TypeScript rate limiter that ramps up gradually after idle periods, so cold systems are not hit at full throughput.",
-  "private": true,
-  "engines": {
-    "node": ">=22"
-  },
-  "scripts": {
-    "test": "vitest run",
-    "typecheck": "tsc",
-    "build": "tsdown",
-    "check:package": "npm run build && publint && attw --pack .",
-    "lint": "eslint .",
-    "test:smoke": "npm run build && node scripts/smoke-test.mjs",
-    "bench": "npm run build && node bench/run.mjs && node bench/plot.mjs",
-    "bench:perf": "npm run build && node --expose-gc bench/perf.mjs"
+  "keywords": [
+    "rate-limiter",
+    "rate-limiting",
+    "throttle",
+    "warmup",
+    "warm-up",
+    "cold-start",
+    "smoothwarmingup",
+    "guava",
+    "backpressure",
+    "token-bucket"
+  ],
+  "license": "Apache-2.0",
+  "author": "Srivathsav01 (https://github.com/srivathsav01)",
+  "homepage": "https://github.com/srivathsav01/slow-start#readme",
+  "bugs": {
+    "url": "https://github.com/srivathsav01/slow-start/issues"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/srivathsav01/slow-start.git"
   },
-  "keywords": [],
-  "author": "Srivathsav",
-  "license": "Apache-2.0",
   "type": "module",
-  "bugs": {
-    "url": "https://github.com/srivathsav01/slow-start/issues"
+  "engines": {
+    "node": ">=22"
   },
+  "sideEffects": false,
+  "main": "./dist/index.cjs",
+  "types": "./dist/index.d.cts",
   "exports": {
     ".": {
       "import": {
@@ -40,13 +44,19 @@
     },
     "./package.json": "./package.json"
   },
-  "main": "./dist/index.cjs",
-  "types": "./dist/index.d.cts",
   "files": [
     "dist"
   ],
-  "sideEffects": false,
-  "homepage": "https://github.com/srivathsav01/slow-start#readme",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc",
+    "build": "tsdown",
+    "check:package": "npm run build && publint && attw --pack .",
+    "lint": "eslint .",
+    "test:smoke": "npm run build && node scripts/smoke-test.mjs",
+    "bench": "npm run build && node bench/run.mjs && node bench/plot.mjs",
+    "bench:perf": "npm run build && node --expose-gc bench/perf.mjs"
+  },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.5",
     "@eslint/js": "^10.0.1",
