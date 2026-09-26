@@ -1,6 +1,6 @@
 {
   "name": "slow-start",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "TypeScript rate limiter that ramps up gradually after idle periods, so cold systems are not hit at full throughput.",
   "keywords": [
     "rate-limiter",
