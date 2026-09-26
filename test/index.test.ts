@@ -11,6 +11,7 @@ describe('public surface', () => {
       'Pacer',
       'QueuedLimiter',
       'RateLimitRejectedError',
+      'RollingWindow',
       'SystemClock',
       'WarmupLimiter',
     ]);
@@ -26,6 +27,7 @@ describe('public surface', () => {
       'reserveSlot',
       'checkBounds',
       'derivePacingConstants',
+      'deriveWindowConstants',
     ]) {
       expect(publicApi).not.toHaveProperty(name);
     }

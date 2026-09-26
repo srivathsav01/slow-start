@@ -14,7 +14,15 @@ import process from 'node:process';
 import { URL, fileURLToPath } from 'node:url';
 
 const PACKAGE_NAME = 'slow-start';
-const EXPECTED_EXPORTS = ['ManualClock', 'Pacer', 'QueuedLimiter', 'RateLimitRejectedError', 'SystemClock', 'WarmupLimiter'];
+const EXPECTED_EXPORTS = [
+  'ManualClock',
+  'Pacer',
+  'QueuedLimiter',
+  'RateLimitRejectedError',
+  'RollingWindow',
+  'SystemClock',
+  'WarmupLimiter',
+];
 const repoRoot = fileURLToPath(new URL('..', import.meta.url));
 
 // npm sets npm_execpath to its own CLI script when running an npm script.

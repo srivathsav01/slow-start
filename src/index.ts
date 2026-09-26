@@ -13,3 +13,7 @@ export { WarmupLimiter } from './warmup/warmup-limiter.js';
 export { Pacer } from './pacing/pacer.js';
 export type { PaceOptions, PacerOptions, QueueOptions } from './pacing/pacing-constants.js';
 export { QueuedLimiter } from './pacing/queued-limiter.js';
+
+export { RollingWindow } from './metrics/rolling-window.js';
+export type { Counters, MetricKind, WindowSnapshot } from './metrics/rolling-window.js';
+export type { WindowOptions } from './metrics/window-constants.js';

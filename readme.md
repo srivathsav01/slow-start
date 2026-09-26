@@ -221,6 +221,94 @@ await limiter.acquire(1, { timeoutMs: 60_000 });   // still refused at 1000 ms
 
 Waiting callers share a **single** timer armed for whoever is next. That's sound because grant times only ever move forward, so a new arrival can never be due before someone already queued. The test suite asserts it directly: with 100 callers queued, at most **one** timer is ever live, and the run arms 99 in sequence rather than 100 at once.
 
+## Metrics
+
+`RollingWindow` counts what happened over the last N milliseconds. It is a
+**separate subsystem**: the limiter does not depend on it, it does not depend
+on the limiter, and neither knows the other exists.
+
+```ts
+import { RollingWindow } from 'slow-start';
+
+const metrics = new RollingWindow({ windowMs: 1000 });
+
+metrics.record('pass');
+metrics.record('block');
+metrics.record('error');
+
+metrics.snapshot();
+// { pass: 1, block: 1, error: 1, total: 2, passPerSecond: 1, errorRatio: 0.5 }
+```
+
+| Option | Default | Meaning |
+|---|---|---|
+| `windowMs` | — | How far back the window looks |
+| `buckets` | `20` | Resolution. 20 buckets over 1,000 ms is 50 ms per bucket |
+
+`windowMs` and `buckets` must divide into a whole number of microseconds per
+bucket, so `{ windowMs: 1000, buckets: 3 }` is rejected. Fractional bucket
+boundaries would make writes near an edge land in whichever bucket the
+floating-point rounding picked.
+
+### Fixed memory, no timers
+
+The window is a ring of buckets, allocated once. A bucket is wiped the moment
+a write lands on it after a full lap, so expiry is lazy: there is no
+background timer and no sweep, and memory is the same under one request per
+minute or a million per second. That is the whole reason for a ring rather
+than a list of timestamps, which grows with traffic.
+
+### What it will not do
+
+**No percentiles — not now, not later.** `p95` and `p99` cannot be recovered
+from a sum and a count; that information is destroyed by summing. A method
+claiming otherwise would return a confident wrong number, which is worse than
+not having it. Percentiles need a different structure (a latency histogram or
+a t-digest), and if this package ever grows one it will be alongside this, not
+on it.
+
+What you get is counters and what follows arithmetically from them:
+`total` (`pass + block`), `passPerSecond`, and `errorRatio`.
+
+Two details worth knowing before you plot them:
+
+- **`total` excludes errors.** An error happens to a request that was already
+  admitted, so counting it again would count that request twice.
+- **`passPerSecond` divides by the whole window** even when the process has
+  been up for less than that, so it reads low at first. It is a rolling
+  average, not an instantaneous rate.
+
+### Wiring it to a limiter
+
+There is no automatic connection — §10.3 of the design keeps them independent
+— so you record the outcomes yourself. That is the whole integration:
+
+```ts
+const warm = new WarmupLimiter({ permitsPerSecond: 100, warmupPeriodMs: 3000 }, clock);
+const limiter = new QueuedLimiter(warm, { maxQueueDelayMs: 500 }, clock);
+const metrics = new RollingWindow({ windowMs: 1000 }, clock);
+
+async function handle(work) {
+  try {
+    await limiter.acquire();
+  } catch (error) {
+    if (error instanceof RateLimitRejectedError) metrics.record('block');
+    throw error;
+  }
+
+  metrics.record('pass');
+  try {
+    return await work();
+  } catch (error) {
+    metrics.record('error');
+    throw error;
+  }
+}
+```
+
+Give both the same clock, and in tests a `ManualClock` drives the limiter and
+the window together.
+
 ## Testing your own code
 
 Every time-dependent part of this library reads time through an injected `Clock`, and `ManualClock` is exported for your tests. Time moves only when you move it, so a three-second warm-up takes no real time and never flakes:
