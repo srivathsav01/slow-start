@@ -22,6 +22,8 @@ const EXPECTED_EXPORTS = [
   'RollingWindow',
   'SystemClock',
   'WarmupLimiter',
+  'attempt',
+  'guard',
 ];
 const repoRoot = fileURLToPath(new URL('..', import.meta.url));
 

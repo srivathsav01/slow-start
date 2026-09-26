@@ -14,6 +14,8 @@ describe('public surface', () => {
       'RollingWindow',
       'SystemClock',
       'WarmupLimiter',
+      'attempt',
+      'guard',
     ]);
   });
 

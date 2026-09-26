@@ -17,3 +17,6 @@ export { QueuedLimiter } from './pacing/queued-limiter.js';
 export { RollingWindow } from './metrics/rolling-window.js';
 export type { Counters, MetricKind, WindowSnapshot } from './metrics/rolling-window.js';
 export type { WindowOptions } from './metrics/window-constants.js';
+
+export { attempt, guard } from './adapters/guard.js';
+export type { Attempt, GuardOptions, Limiter } from './adapters/guard.js';

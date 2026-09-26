@@ -117,7 +117,7 @@ const { waitedMs, storedPermitsAfter } = await limiter.acquire(2);
 - `permits` must be a positive safe integer; anything else rejects with a `RangeError`. Zero is an error rather than a silent no-op, because its intent is ambiguous.
 - There is also an upper bound, scaled to your rate: a request whose cost could not be represented exactly in microseconds is rejected rather than silently corrupting the timeline. At 100 permits/s the ceiling is about 9×10¹¹ permits, so ordinary use never meets it.
 - Asking for more permits than the limiter holds is allowed. The request drains what is stored and pays the stable interval for the rest, so the wait is proportionally longer.
-- `options.signal` takes an `AbortSignal`. See [Cancellation](#cancellation).
+- `options.signal` takes an `AbortSignal`. See [Cancellation](#cancellation-stops-you-waiting-it-does-not-return-the-permit).
 
 `AcquireResult` reports `waitedMs`, the time actually waited as measured by the clock, and `storedPermitsAfter`, the permit level immediately after the reservation. Both are there for metrics and for understanding what the limiter is doing.
 
@@ -220,6 +220,104 @@ await limiter.acquire(1, { timeoutMs: 60_000 });   // still refused at 1000 ms
 ### One timer, not one per caller
 
 Waiting callers share a **single** timer armed for whoever is next. That's sound because grant times only ever move forward, so a new arrival can never be due before someone already queued. The test suite asserts it directly: with 100 callers queued, at most **one** timer is ever live, and the run arms 99 in sequence rather than 100 at once.
+
+## Using it in a web framework
+
+There are no Express, Fastify or Koa adapters, on purpose — see
+[below](#no-framework-adapters). Instead there is `attempt`, which asks the
+limiter and hands back an answer rather than throwing:
+
+```ts
+import { attempt } from 'slow-start';
+
+const result = await attempt(limiter);
+if (!result.ok) {
+  // result.reason is 'delay' or 'depth'; result.retryAfterMs is rounded up
+}
+```
+
+Each framework then needs a few lines. **These snippets are run by the test
+suite against real servers**, so they cannot quietly rot.
+
+**Express**
+
+```js
+app.use(async (req, res, next) => {
+  const result = await attempt(rateLimiter);
+  if (result.ok) {
+    next();
+    return;
+  }
+  res.setHeader('Retry-After', String(Math.ceil(result.retryAfterMs / 1000)));
+  res.status(429).json({ error: 'rate limited' });
+});
+```
+
+**Fastify**
+
+```js
+app.addHook('onRequest', async (request, reply) => {
+  const result = await attempt(rateLimiter);
+  if (result.ok) return;
+  reply.header('Retry-After', String(Math.ceil(result.retryAfterMs / 1000)));
+  await reply.code(429).send({ error: 'rate limited' });
+});
+```
+
+**Koa**
+
+```js
+app.use(async (ctx, next) => {
+  const result = await attempt(rateLimiter);
+  if (result.ok) {
+    await next();
+    return;
+  }
+  ctx.set('Retry-After', String(Math.ceil(result.retryAfterMs / 1000)));
+  ctx.status = 429;
+  ctx.body = { error: 'rate limited' };
+});
+```
+
+Pass the request's abort signal where your framework has one, so a client that
+disconnects stops waiting: `attempt(rateLimiter, { signal: request.signal })`.
+
+### Wrapping work that isn't a request
+
+For a job, a queue consumer or an outbound API call, `guard` runs the work
+once the limiter admits it:
+
+```ts
+import { guard } from 'slow-start';
+
+const rows = await guard(limiter, () => db.query(sql));
+```
+
+It is deliberately transparent: a refusal rejects with
+`RateLimitRejectedError`, the work's own errors propagate untouched, and there
+is no retry, no metrics and no rollback. A permit spent on work that then
+fails stays spent.
+
+Both take any limiter in this package, and anything else with a matching
+`acquire` — the `Limiter` type is structural, not a base class.
+
+### No framework adapters
+
+The design called for Express, Fastify and Koa adapters. They are
+deliberately absent, and the reason is **reversibility**: adding adapters
+later is additive and non-breaking, while removing them once people depend on
+them needs a major version and a migration note. Shipping `attempt` keeps both
+doors open.
+
+Each adapter would also be about four lines of real logic wrapped in a
+permanent public surface with its own semver obligations, and the build would
+start tracking three frameworks' release cycles for it.
+
+The cost is real and worth naming: `app.use(limiter.express())` is what people
+search for, and a snippet asks you to understand the integration before you
+can use it. If adapters are added later they will live in this package under a
+subpath export rather than a package per framework — and only if someone asks
+for them.
 
 ## Metrics
 
@@ -409,6 +507,10 @@ Both admit at exactly the same rate while traffic flows — composition doesn't 
 **Monotonic time only.** Scheduling reads `process.hrtime.bigint()`, never the wall clock, so an NTP correction or a daylight-saving change cannot make the limiter think it has been idle for an hour, or make every caller wait forever.
 
 **Exact arithmetic, not bit-identical to Guava.** Guava computes in integer microseconds and truncates the wait at two points. This implementation keeps exact floating-point values, so an individual wait may differ from Guava's by up to **1 µs**, always in the permissive direction, bounding the rate error at 0.01%. Guava truncates because Java's arithmetic makes it convenient, not as a design choice; reproducing it would mean writing extra code to be marginally less accurate. The divergence was measured, not estimated — see [`verification/`](verification/).
+
+**No framework adapters.** `attempt` and `guard` are shipped instead, with
+tested snippets for Express, Fastify and Koa. The reasoning is
+[above](#no-framework-adapters).
 
 **`warmupPeriodMs` must be greater than zero.** Guava allows zero; this library rejects it. With a zero warm-up period the cool-down interval is `0 / 0`, and every derived value becomes `NaN`. A limiter with no warm-up is a plain rate limiter, and there are better packages for that.
 
