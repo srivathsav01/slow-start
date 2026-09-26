@@ -51,7 +51,12 @@ Reach for it when **the first requests after quiet cost more than the rest**:
 - anything that has fallen over in the first seconds after a deploy
 
 If your cost per request is flat, use a plain token bucket instead — a warm-up
-period would only make you slower.
+period would only make you slower. The same goes for per-user limits (this
+limits one shared resource, not a keyed set), multi-instance deployments
+(state is in-process, so ten instances admit ten times the rate) and
+serverless (the process dies before it ever warms up).
+
+**[How to choose your three numbers →](https://github.com/srivathsav01/slow-start/blob/main/docs/choosing-parameters.md)**
 
 ## How it compares
 
@@ -78,7 +83,8 @@ don't: a rate that starts low after idleness and ramps.
 - **Pacing** — even spacing of bursts, composable with warm-up
 - **Cancellation** — `AbortSignal` support throughout
 - **Rolling metrics** — pass / block / error counters over a fixed-memory ring
-- **Express, Fastify and Koa** — a few documented, tested lines each
+- **Express adapter** — one line, on the `slow-start/adapters` subpath;
+  Fastify and Koa are documented, tested snippets
 - **Deterministic testing** — inject a `ManualClock` and test time-dependent
   code without sleeping
 - **Zero runtime dependencies**, TypeScript types included, ESM and CJS
@@ -86,21 +92,20 @@ don't: a rate that starts low after idleness and ramps.
 ## Rate limiting an Express route
 
 ```ts
-import { attempt } from 'slow-start';
+import { WarmupLimiter } from 'slow-start';
+import { expressRateLimit } from 'slow-start/adapters';
 
-app.use(async (req, res, next) => {
-  const result = await attempt(rateLimiter);
-  if (result.ok) {
-    next();
-    return;
-  }
-  res.setHeader('Retry-After', String(Math.ceil(result.retryAfterMs / 1000)));
-  res.status(429).json({ error: 'rate limited' });
-});
+const limiter = new WarmupLimiter({ permitsPerSecond: 100, warmupPeriodMs: 3000 });
+
+app.use(expressRateLimit(limiter));
 ```
 
-Fastify and Koa snippets are in the full documentation, and all three are
-executed by the test suite against real servers.
+A refused request gets `429` and a `Retry-After` header. Express is not a
+dependency of this package, and the adapter lives on a subpath so the main
+import stays free of framework types.
+
+Fastify and Koa need a few lines over `attempt()`; those snippets are in the
+full documentation and are executed by the test suite against real servers.
 
 ## Testing your own code
 

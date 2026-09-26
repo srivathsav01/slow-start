@@ -66,12 +66,22 @@ try {
   writeFileSync(
     join(workDir, 'esm.mjs'),
     `const mod = await import('${PACKAGE_NAME}');
-console.log(JSON.stringify({ file: import.meta.resolve('${PACKAGE_NAME}'), exports: Object.keys(mod).sort() }));`,
+const adapters = await import('${PACKAGE_NAME}/adapters');
+console.log(JSON.stringify({
+  file: import.meta.resolve('${PACKAGE_NAME}'),
+  exports: Object.keys(mod).sort(),
+  adapters: Object.keys(adapters).sort(),
+}));`,
   );
   writeFileSync(
     join(workDir, 'cjs.cjs'),
     `const mod = require('${PACKAGE_NAME}');
-console.log(JSON.stringify({ file: require.resolve('${PACKAGE_NAME}'), exports: Object.keys(mod).sort() }));`,
+const adapters = require('${PACKAGE_NAME}/adapters');
+console.log(JSON.stringify({
+  file: require.resolve('${PACKAGE_NAME}'),
+  exports: Object.keys(mod).sort(),
+  adapters: Object.keys(adapters).sort(),
+}));`,
   );
 
   const esm = JSON.parse(run(process.execPath, ['esm.mjs'], workDir));
@@ -83,6 +93,17 @@ console.log(JSON.stringify({ file: require.resolve('${PACKAGE_NAME}'), exports: 
   if (!cjs.file.endsWith('.cjs')) failures.push(`require resolved to ${cjs.file}, expected a .cjs file`);
   const missing = EXPECTED_EXPORTS.filter((name) => !esm.exports.includes(name));
   if (missing.length > 0) failures.push(`missing exports: ${missing.join(', ')}`);
+  // The subpath must resolve through both loaders, and must not leak into
+  // the core entry point.
+  for (const [loader, result] of [['import', esm], ['require', cjs]]) {
+    if (!result.adapters.includes('expressRateLimit')) {
+      failures.push(`${loader} of ${PACKAGE_NAME}/adapters is missing expressRateLimit`);
+    }
+    if (result.exports.includes('expressRateLimit')) {
+      failures.push(`${loader}: expressRateLimit leaked into the core entry point`);
+    }
+  }
+
   if (JSON.stringify(esm.exports) !== JSON.stringify(cjs.exports)) {
     failures.push(`exports differ: import ${JSON.stringify(esm.exports)}, require ${JSON.stringify(cjs.exports)}`);
   }
@@ -103,6 +124,7 @@ console.log(JSON.stringify({ file: require.resolve('${PACKAGE_NAME}'), exports: 
   }
 
   console.log(`vectors -> ${vectors.replayed} golden vectors replayed, all matching`);
+  console.log(`subpath -> ${PACKAGE_NAME}/adapters exports ${esm.adapters.join(', ')}`);
   console.log(`import  -> ${esm.exports.join(', ')}`);
   console.log(`require -> ${cjs.exports.join(', ')}`);
   console.log('smoke test passed');

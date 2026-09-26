@@ -48,7 +48,25 @@ Reach for this when **the first requests after quiet are more expensive than the
 - A client calling an upstream that itself needs to warm up
 - Anything that has ever fallen over in the first seconds after a deploy
 
-Do not reach for this when your cost per request is flat. If the thousandth request costs what the first did, a warm-up period only makes you slower for no benefit; a plain token bucket is the right tool.
+### When it is the wrong tool
+
+- **A fixed external quota with no cold-start problem.** A token bucket or
+  GCRA is simpler and gives you the whole quota from the first second.
+- **Per-user or per-tenant limits.** This limits one shared resource; it does
+  not manage a keyed set of limiters. `rate-limiter-flexible` and
+  `express-rate-limit` do.
+- **More than one instance.** State is in-process, so ten instances configured
+  for 100 permits per second admit 1,000 between them. Divide the rate by your
+  instance count, or use a limiter with a shared backend.
+- **Serverless.** If the process dies between invocations the limiter never
+  warms up, and scaling out gives you one uncoordinated limiter per instance.
+  Limit at the gateway instead.
+- **A flat cost per request.** If the thousandth request costs what the first
+  did, there is nothing to warm up and this only makes you slower.
+
+Picking the three numbers is its own question — see
+**[Choosing your parameters](docs/choosing-parameters.md)** for how to measure
+them rather than guess.
 
 ## How it compares
 
@@ -250,8 +268,38 @@ Waiting callers share a **single** timer armed for whoever is next. That's sound
 
 ## Using it in a web framework
 
-Use `attempt`, which asks the limiter and hands back an answer rather than
-throwing — a refusal is a response to send, not an exception to handle:
+### Express
+
+```ts
+import { WarmupLimiter } from 'slow-start';
+import { expressRateLimit } from 'slow-start/adapters';
+
+const limiter = new WarmupLimiter({ permitsPerSecond: 100, warmupPeriodMs: 3000 });
+
+app.use(expressRateLimit(limiter));
+```
+
+A refused request gets `429` with a `Retry-After` header in seconds, rounded
+up. Anything that is not a refusal — an invalid option, a cancelled signal —
+goes to `next(error)` and your error handler, rather than being reported to
+the client as backpressure.
+
+| Option | Default | Meaning |
+|---|---|---|
+| `permits` | `1` | Permits per request |
+| `timeoutMs` | — | This caller's budget; may only tighten `maxQueueDelayMs` |
+| `statusCode` | `429` | Status for a refused request |
+| `body` | `{ error: 'rate limited' }` | Body for a refused request, as a function of `{ reason, retryAfterMs }` |
+
+The adapter lives on the `slow-start/adapters` subpath, so the main entry
+point stays free of framework types. Express itself is not a dependency of
+this package.
+
+### Other frameworks
+
+There is no adapter for them, but the integration is a few lines over
+`attempt`, which asks the limiter and hands back an answer rather than
+throwing:
 
 ```ts
 import { attempt } from 'slow-start';
@@ -262,22 +310,8 @@ if (!result.ok) {
 }
 ```
 
-Each framework then needs a few lines. **These snippets are run by the test
-suite against real servers**, so they cannot quietly rot.
-
-**Express**
-
-```js
-app.use(async (req, res, next) => {
-  const result = await attempt(rateLimiter);
-  if (result.ok) {
-    next();
-    return;
-  }
-  res.setHeader('Retry-After', String(Math.ceil(result.retryAfterMs / 1000)));
-  res.status(429).json({ error: 'rate limited' });
-});
-```
+**These snippets are run by the test suite against real servers**, so they
+cannot quietly rot.
 
 **Fastify**
 

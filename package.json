@@ -52,7 +52,24 @@
         "default": "./dist/index.cjs"
       }
     },
+    "./adapters": {
+      "import": {
+        "types": "./dist/adapters.d.mts",
+        "default": "./dist/adapters.mjs"
+      },
+      "require": {
+        "types": "./dist/adapters.d.cts",
+        "default": "./dist/adapters.cjs"
+      }
+    },
     "./package.json": "./package.json"
+  },
+  "typesVersions": {
+    "*": {
+      "adapters": [
+        "./dist/adapters.d.cts"
+      ]
+    }
   },
   "files": [
     "dist"
