@@ -1,6 +1,6 @@
 {
   "name": "slow-start",
-  "version": "0.3.0",
+  "version": "1.0.0",
   "description": "Warm-up rate limiter for Node.js and TypeScript: ramps up gradually after idle periods so cold caches and pools are not hit at full throughput. Guava SmoothWarmingUp, zero dependencies.",
   "keywords": [
     "rate-limiter",
