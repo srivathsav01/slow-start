@@ -143,7 +143,58 @@ jobs:
             --generate-notes \
             ${{ inputs.dist_tag == 'next' && '--prerelease' || '' }}
 
+      # Confirm from the registry's point of view rather than trusting that
+      # `npm publish` exiting zero means everything landed.
+      - name: Verify the published release
+        if: ${{ !inputs.dry_run }}
+        run: |
+          name=$(node -p "require('./package.json').name")
+          version='${{ steps.version.outputs.version }}'
+          tag='${{ inputs.dist_tag }}'
+
+          # The registry takes a moment to serve a new version; retry rather
+          # than fail on a race that resolves itself in seconds.
+          published=''
+          for attempt in 1 2 3 4 5 6 7 8 9 10; do
+            published=$(npm view --prefer-online "$name@$version" version 2>/dev/null || true)
+            [ -n "$published" ] && break
+            echo "not visible yet (attempt $attempt); waiting"
+            sleep 5
+          done
+
+          if [ "$published" != "$version" ]; then
+            echo "::error::$name@$version is not on the registry after publishing"
+            exit 1
+          fi
+
+          tagged=$(npm view --prefer-online "$name" "dist-tags.$tag" 2>/dev/null || true)
+          if [ "$tagged" != "$version" ]; then
+            echo "::error::dist-tag $tag points at '$tagged', expected $version"
+            exit 1
+          fi
+
+          # Present only when npm accepted the OIDC token and signed the
+          # tarball, so its absence means trusted publishing silently did not
+          # apply — worth knowing, but the release itself is already out.
+          provenance=$(npm view --prefer-online "$name@$version" dist.attestations.provenance.predicateType 2>/dev/null || true)
+          if [ -z "$provenance" ]; then
+            echo "::warning::published without a provenance attestation; check the trusted publisher settings"
+            provenance='none'
+          fi
+
+          all_tags=$(npm view --prefer-online "$name" dist-tags --json 2>/dev/null | tr -d '\n ')
+
+          {
+            echo "| check | value |"
+            echo "|---|---|"
+            echo "| version on registry | \`$published\` |"
+            echo "| dist-tag \`$tag\` | \`$tagged\` |"
+            echo "| all dist-tags | \`$all_tags\` |"
+            echo "| provenance | \`$provenance\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Summary
+        if: ${{ always() }}
         run: |
           {
             echo "### ${{ steps.version.outputs.tag }}"
@@ -152,5 +203,8 @@ jobs:
               echo "Dry run: every check passed and the tarball packed. Nothing was published."
             else
               echo "Published to npm under \`${{ inputs.dist_tag }}\` and released on GitHub."
+              echo
+              echo "- https://www.npmjs.com/package/${{ github.event.repository.name }}/v/${{ steps.version.outputs.version }}"
+              echo "- ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ steps.version.outputs.tag }}"
             fi
           } >> "$GITHUB_STEP_SUMMARY"
