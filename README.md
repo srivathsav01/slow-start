@@ -94,6 +94,21 @@ Pacing alone is not the same thing either. A fixed pacer spaces callers evenly f
 
 ## API
 
+**One rule holds across every limiter here: `acquire` throws when it refuses,
+`tryAcquire` returns a value.** The `try` prefix means a refusal is an ordinary
+outcome rather than an exception, so you are never made to write a
+`try`/`catch` around expected control flow.
+
+| Method | The question it answers | On refusal |
+|---|---|---|
+| `acquire(...)` | "I need this permit" | Throws `RateLimitRejectedError`, carrying `reason` and `waitMs` |
+| `tryAcquire(...)` | "only if it's cheap" | Returns `false` (or a result object on `WarmupLimiter`) |
+| `attempt(limiter, ...)` | "I have to answer a client" | Returns `{ ok: false, reason, retryAfterMs }` |
+
+Neither `tryAcquire` nor `attempt` swallows anything else: invalid arguments
+still throw a `RangeError`, and an aborted signal still rejects. Reporting
+either as a refusal would hide a bug behind a 429.
+
 ### `new WarmupLimiter(options, clock?)`
 
 | Option | Required | Meaning |
@@ -208,6 +223,18 @@ try {
 
 A refusal changes nothing: no reservation is made and the timeline does not move, so a flood of refused callers cannot delay the ones already queued.
 
+Both also offer `tryAcquire`, which returns `false` rather than throwing:
+
+```ts
+if (await limiter.tryAcquire(1, { timeoutMs: 0 })) {
+  // admitted right away
+}
+```
+
+It is the same code path — `tryAcquire` delegates to `acquire` and translates
+the refusal — so the bounds, the precedence rule and the queue policy cannot
+drift between them.
+
 ### A per-call timeout may only tighten the bound
 
 ```ts
@@ -223,9 +250,8 @@ Waiting callers share a **single** timer armed for whoever is next. That's sound
 
 ## Using it in a web framework
 
-There are no Express, Fastify or Koa adapters, on purpose — see
-[below](#no-framework-adapters). Instead there is `attempt`, which asks the
-limiter and hands back an answer rather than throwing:
+Use `attempt`, which asks the limiter and hands back an answer rather than
+throwing — a refusal is a response to send, not an exception to handle:
 
 ```ts
 import { attempt } from 'slow-start';
@@ -340,12 +366,11 @@ than a list of timestamps, which grows with traffic.
 
 ### What it will not do
 
-**No percentiles — not now, not later.** `p95` and `p99` cannot be recovered
-from a sum and a count; that information is destroyed by summing. A method
-claiming otherwise would return a confident wrong number, which is worse than
-not having it. Percentiles need a different structure (a latency histogram or
-a t-digest), and if this package ever grows one it will be alongside this, not
-on it.
+**No percentiles.** `p95` and `p99` cannot be recovered from a sum and a
+count — that information is destroyed by summing — so a method offering them
+here would return a confident wrong number. Percentiles need a different
+structure, such as a latency histogram; use a dedicated metrics library if you
+need them.
 
 What you get is counters and what follows arithmetically from them:
 `total` (`pass + block`), `passPerSecond`, and `errorRatio`.
@@ -360,8 +385,8 @@ Two details worth knowing before you plot them:
 
 ### Wiring it to a limiter
 
-There is no automatic connection — §10.3 of the design keeps them independent
-— so you record the outcomes yourself. That is the whole integration:
+The limiter and the window are independent: neither knows the other exists,
+so you record the outcomes yourself. That is the whole integration:
 
 ```ts
 const warm = new WarmupLimiter({ permitsPerSecond: 100, warmupPeriodMs: 3000 }, clock);
@@ -511,7 +536,7 @@ Resolving *late* is unavoidable on any runtime, and the amount depends on your O
 
 Methodology, raw CSVs and the machine details are in [`bench/results/`](bench/results/).
 
-All seven scenarios the design called for are covered, including warm-up composed with pacing. Sustained overload — 200 requests per second for six seconds, into a limiter that tops out at 100/s:
+Warm-up and pacing compose. Under sustained overload — 200 requests per second for six seconds, into a limiter that tops out at 100/s:
 
 | | Admitted | Refused | Mean wait | Longest wait |
 |---|---|---|---|---|

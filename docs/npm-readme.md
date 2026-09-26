@@ -71,7 +71,8 @@ don't: a rate that starts low after idleness and ramps.
 
 - **Warm-up admission control** — Guava `SmoothWarmingUp`, verified against
   twelve hand-derived golden vectors
-- **Rate limiting with backpressure** — `acquire` waits, `tryAcquire` refuses
+- **Two ways to ask, on every limiter** — `acquire` waits and throws if it is
+  refused; `tryAcquire` returns `false` instead
 - **Queue bounds** — refuse callers who would wait too long, or when too many
   already are, instead of queueing without limit
 - **Pacing** — even spacing of bursts, composable with warm-up
@@ -126,6 +127,9 @@ await second;
 - **The first caller after idleness waits zero** — the cost lands on the next
   caller. That's Guava's debt model, and it's deliberate.
 - **Cancelling stops you waiting; it does not return the permit.**
+- **`acquire` throws on refusal, `tryAcquire` returns a value.** Every limiter
+  follows that rule, so a refusal never forces a `try`/`catch` on you unless
+  you want the reason.
 
 ## Full documentation
 
