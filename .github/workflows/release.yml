@@ -152,22 +152,35 @@ jobs:
           version='${{ steps.version.outputs.version }}'
           tag='${{ inputs.dist_tag }}'
 
-          # The registry takes a moment to serve a new version; retry rather
-          # than fail on a race that resolves itself in seconds.
+          # npm's read replicas lag behind a publish by anywhere from seconds
+          # to a few minutes, so this waits rather than calling a slow replica
+          # a failed release. Up to ~5 minutes: one immediate check, then five
+          # more a minute apart.
+          attempts=6
+          delay=60
           published=''
-          for attempt in 1 2 3 4 5 6 7 8 9 10; do
+          tagged=''
+
+          for attempt in $(seq 1 $attempts); do
             published=$(npm view --prefer-online "$name@$version" version 2>/dev/null || true)
-            [ -n "$published" ] && break
-            echo "not visible yet (attempt $attempt); waiting"
-            sleep 5
+            tagged=$(npm view --prefer-online "$name" "dist-tags.$tag" 2>/dev/null || true)
+
+            if [ "$published" = "$version" ] && [ "$tagged" = "$version" ]; then
+              echo "registry consistent after attempt $attempt"
+              break
+            fi
+
+            if [ "$attempt" -lt "$attempts" ]; then
+              echo "registry not consistent yet (version='$published', $tag='$tagged'); waiting ${delay}s (attempt $attempt/$attempts)"
+              sleep "$delay"
+            fi
           done
 
           if [ "$published" != "$version" ]; then
-            echo "::error::$name@$version is not on the registry after publishing"
+            echo "::error::$name@$version is still not on the registry after waiting"
             exit 1
           fi
 
-          tagged=$(npm view --prefer-online "$name" "dist-tags.$tag" 2>/dev/null || true)
           if [ "$tagged" != "$version" ]; then
             echo "::error::dist-tag $tag points at '$tagged', expected $version"
             exit 1
@@ -176,7 +189,14 @@ jobs:
           # Present only when npm accepted the OIDC token and signed the
           # tarball, so its absence means trusted publishing silently did not
           # apply — worth knowing, but the release itself is already out.
+          # Attestations can appear a little after the version itself, so give
+          # them one more minute before deciding they are missing.
           provenance=$(npm view --prefer-online "$name@$version" dist.attestations.provenance.predicateType 2>/dev/null || true)
+          if [ -z "$provenance" ]; then
+            sleep "$delay"
+            provenance=$(npm view --prefer-online "$name@$version" dist.attestations.provenance.predicateType 2>/dev/null || true)
+          fi
+
           if [ -z "$provenance" ]; then
             echo "::warning::published without a provenance attestation; check the trusted publisher settings"
             provenance='none'
