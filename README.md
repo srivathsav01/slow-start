@@ -407,6 +407,44 @@ async function handle(work) {
 Give both the same clock, and in tests a `ManualClock` drives the limiter and
 the window together.
 
+## Concurrency, and why there are no locks
+
+Java's `RateLimiter` synchronises its reservation because the JVM is genuinely
+multi-threaded: two threads can be inside the method at once and interleave
+their reads and writes. Node's event loop is single-threaded, and a block of
+synchronous JavaScript cannot be preempted — once a reservation begins, no
+other JavaScript runs until it returns. The read-modify-write of the stored
+permits and the timeline is therefore atomic by construction, and no mutex is
+needed.
+
+**Single-threading removes the need for locks. It does not remove the need for
+discipline about where `await` appears.** This would be a real bug:
+
+```ts
+const grantTime = nextFreeTicket;
+await something();              // the event loop is free to run other callers
+nextFreeTicket = grantTime + wait;
+```
+
+Two concurrent callers could both read the same `nextFreeTicket`, both compute
+against it, and both be granted the same slot — double-spending permits and
+exceeding the configured rate. Every reservation in this package completes
+**before** the first `await`, which is why three `acquire()` calls made on
+three consecutive lines get three distinct, increasing slots in call order.
+There is a test that would fail if that ever changed.
+
+### Time, and how long it stays exact
+
+Internally the limiter keeps time as whole microseconds in a `number`,
+measured from its own construction. That is exact up to 2⁵³ microseconds —
+about **285 years of uptime** — after which consecutive microseconds stop
+being distinguishable. Permit counts are fractional by nature, so the algebra
+is floating point; doing it in `bigint` would truncate and corrupt the slope.
+
+Two consequences worth knowing: time below one microsecond is invisible to the
+limiter, and a single request large enough to push the timeline past that
+range is rejected rather than silently losing precision.
+
 ## Testing your own code
 
 Every time-dependent part of this library reads time through an injected `Clock`, and `ManualClock` is exported for your tests. Time moves only when you move it, so a three-second warm-up takes no real time and never flakes:

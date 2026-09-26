@@ -1,18 +1,28 @@
 {
   "name": "slow-start",
   "version": "0.3.0",
-  "description": "TypeScript rate limiter that ramps up gradually after idle periods, so cold systems are not hit at full throughput.",
+  "description": "Warm-up rate limiter for Node.js and TypeScript: ramps up gradually after idle periods so cold caches and pools are not hit at full throughput. Guava SmoothWarmingUp, zero dependencies.",
   "keywords": [
     "rate-limiter",
     "rate-limiting",
+    "ratelimit",
     "throttle",
+    "throttling",
     "warmup",
     "warm-up",
     "cold-start",
+    "slow-start",
     "smoothwarmingup",
     "guava",
     "backpressure",
-    "token-bucket"
+    "token-bucket",
+    "leaky-bucket",
+    "nodejs",
+    "typescript",
+    "express",
+    "fastify",
+    "koa",
+    "middleware"
   ],
   "license": "Apache-2.0",
   "author": "Srivathsav01 (https://github.com/srivathsav01)",
@@ -55,7 +65,9 @@
     "lint": "eslint .",
     "test:smoke": "npm run build && node scripts/smoke-test.mjs",
     "bench": "npm run build && node bench/run.mjs && node bench/plot.mjs",
-    "bench:perf": "npm run build && node --expose-gc bench/perf.mjs"
+    "bench:perf": "npm run build && node --expose-gc bench/perf.mjs",
+    "prepack": "node scripts/swap-readme.mjs swap",
+    "postpack": "node scripts/swap-readme.mjs restore"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.5",
