@@ -1,6 +1,7 @@
 import type { Clock } from '../clock/clock.js';
 import { SystemClock } from '../clock/system-clock.js';
 import type { Scheduler } from '../core/scheduler.js';
+import type { AcquireResult } from '../core/acquire-result.js';
 import { RateLimitRejectedError } from '../core/errors.js';
 import { requirePositiveInteger } from '../core/validation-helper.js';
 import {
@@ -25,6 +26,7 @@ import { WaitQueue } from './wait-queue.js';
  * ```
  */
 export class QueuedLimiter {
+  private readonly clock: Clock;
   private readonly scheduler: Scheduler;
   private readonly bounds: QueueBounds;
   private readonly queue: WaitQueue;
@@ -37,6 +39,7 @@ export class QueuedLimiter {
    * @throws RangeError if a bound is invalid.
    */
   constructor(scheduler: Scheduler, options: QueueOptions = {}, clock: Clock = new SystemClock()) {
+    this.clock = clock;
     this.scheduler = scheduler;
     this.bounds = deriveQueueBounds(options);
     this.queue = new WaitQueue(clock, clock.now());
@@ -54,7 +57,8 @@ export class QueuedLimiter {
    * @throws RateLimitRejectedError if a bound refuses the caller, in which
    * case the scheduler is never asked to reserve.
    */
-  async acquire(permits = 1, options: PaceOptions = {}): Promise<void> {
+  async acquire(permits = 1, options: PaceOptions = {}): Promise<AcquireResult> {
+    const start = this.clock.now();
     const signal = options.signal;
     signal?.throwIfAborted();
     requirePositiveInteger('permits', permits);
@@ -73,10 +77,10 @@ export class QueuedLimiter {
     );
 
     const waitMicros = this.scheduler.reserveMicros(permits);
-    if (waitMicros <= 0) {
-      return;
+    if (waitMicros > 0) {
+      await this.queue.wait(waitMicros, signal);
     }
-    await this.queue.wait(waitMicros, signal);
+    return { waitedMs: Number(this.clock.now() - start) / 1_000_000 };
   }
 
   /**
@@ -90,18 +94,17 @@ export class QueuedLimiter {
    * Admitted callers still wait for their slot — pass `timeoutMs: 0` for a
    * purely non-blocking probe.
    *
-   * @returns `true` once the caller may proceed, `false` if a bound refused
-   * it. A refusal reserves nothing and leaves the queue untouched.
+   * @returns The result once the caller may proceed, or `false` if a bound
+   * refused it. A refusal reserves nothing and leaves the queue untouched.
    * @throws RangeError for invalid arguments, or `options.signal.reason` if
    * cancelled — neither is a refusal, and reporting them as one would hide a
    * bug as backpressure.
    */
-  async tryAcquire(permits = 1, options: PaceOptions = {}): Promise<boolean> {
+  async tryAcquire(permits = 1, options: PaceOptions = {}): Promise<AcquireResult | false> {
     // Delegating keeps one implementation of the bounds, the precedence rule
     // and the queue policy: the two cannot drift apart.
     try {
-      await this.acquire(permits, options);
-      return true;
+      return await this.acquire(permits, options);
     } catch (error) {
       if (error instanceof RateLimitRejectedError) {
         return false;

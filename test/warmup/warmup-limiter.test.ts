@@ -140,15 +140,15 @@ describe('WarmupLimiter', () => {
   describe('tryAcquire', () => {
     it('succeeds with a zero timeout only while a permit is free right now', async () => {
       const { limiter } = setup();
-      expect(await limiter.tryAcquire(1, 0)).toEqual({ waitedMs: 0, storedPermitsAfter: 299 });
+      expect(await limiter.tryAcquire(1, { timeoutMs: 0 })).toEqual({ waitedMs: 0, storedPermitsAfter: 299 });
       // The next caller owes about 29.93 ms, so the probe refuses.
-      expect(await limiter.tryAcquire(1, 0)).toBe(false);
+      expect(await limiter.tryAcquire(1, { timeoutMs: 0 })).toBe(false);
     });
 
     it('refuses immediately when the wait exceeds the timeout', async () => {
       const { limiter } = setup();
       await limiter.acquire();
-      const probe = track(limiter.tryAcquire(1, 20));
+      const probe = track(limiter.tryAcquire(1, { timeoutMs: 20 }));
       await flush();
       // Refused without waiting out the 20 ms budget first.
       expect(probe.settled).toBe(true);
@@ -158,7 +158,7 @@ describe('WarmupLimiter', () => {
     it('waits when the wait fits inside the timeout', async () => {
       const { clock, limiter } = setup();
       await limiter.acquire();
-      const probe = track(limiter.tryAcquire(1, 30));
+      const probe = track(limiter.tryAcquire(1, { timeoutMs: 30 }));
 
       clock.advance(29_933_000n);
       await flush();
@@ -185,7 +185,7 @@ describe('WarmupLimiter', () => {
         await limiter.acquire();
 
         for (let i = 0; i < 50; i++) {
-          expect(await limiter.tryAcquire(1, 1)).toBe(false);
+          expect(await limiter.tryAcquire(1, { timeoutMs: 1 })).toBe(false);
         }
 
         // Still exactly the second caller's bill, unchanged by 50 probes.
@@ -204,8 +204,8 @@ describe('WarmupLimiter', () => {
         // The very first caller waits zero however large the request, so the
         // probe has to come after someone has put debt on the timeline.
         await limiter.acquire();
-        expect(await limiter.tryAcquire(1_000, 10)).toBe(false);
-        expect(await limiter.tryAcquire(1_000, 0)).toBe(false);
+        expect(await limiter.tryAcquire(1_000, { timeoutMs: 10 })).toBe(false);
+        expect(await limiter.tryAcquire(1_000, { timeoutMs: 0 })).toBe(false);
         // The pot still holds 299: the next caller takes it to 298, and waits
         // only the second caller's bill rather than a drained pot's.
         const next = track(limiter.acquire());
@@ -218,7 +218,7 @@ describe('WarmupLimiter', () => {
     it('rejects an invalid timeout', async () => {
       const { limiter } = setup();
       for (const timeoutMs of [-1, NaN, -Infinity]) {
-        await expect(limiter.tryAcquire(1, timeoutMs)).rejects.toThrow(
+        await expect(limiter.tryAcquire(1, { timeoutMs: timeoutMs })).rejects.toThrow(
           `timeoutMs must be a non-negative number, got ${String(timeoutMs)}`,
         );
       }
@@ -228,7 +228,7 @@ describe('WarmupLimiter', () => {
 
     it('rejects an invalid permit count', async () => {
       const { limiter } = setup();
-      await expect(limiter.tryAcquire(0, 5)).rejects.toThrow(RangeError);
+      await expect(limiter.tryAcquire(0, { timeoutMs: 5 })).rejects.toThrow(RangeError);
       await expect(limiter.tryAcquire(1.5)).rejects.toThrow(RangeError);
     });
   });
@@ -296,7 +296,7 @@ describe('WarmupLimiter', () => {
       const controller = new AbortController();
       await limiter.acquire();
 
-      const probe = limiter.tryAcquire(1, 60, { signal: controller.signal });
+      const probe = limiter.tryAcquire(1, { timeoutMs: 60, signal: controller.signal });
       controller.abort();
       await expect(probe).rejects.toThrow();
     });
@@ -305,7 +305,7 @@ describe('WarmupLimiter', () => {
       const { limiter } = setup();
       const controller = new AbortController();
       controller.abort();
-      await expect(limiter.tryAcquire(1, 0, { signal: controller.signal })).rejects.toThrow();
+      await expect(limiter.tryAcquire(1, { timeoutMs: 0, signal: controller.signal })).rejects.toThrow();
     });
   });
 

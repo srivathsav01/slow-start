@@ -1,5 +1,6 @@
 import type { Clock } from '../clock/clock.js';
 import { SystemClock } from '../clock/system-clock.js';
+import type { AcquireResult } from '../core/acquire-result.js';
 import type { Scheduler } from '../core/scheduler.js';
 import type { WarmupOptions } from './constants.js';
 import { SmoothWarmingUp } from './smooth-warming-up.js';
@@ -9,15 +10,18 @@ export interface AcquireOptions {
   /**
    * Cancels the call. Aborting before the call reserves nothing; aborting
    * while waiting **forfeits** the permits, because the timeline has already
-   * moved and later callers are waiting on it (spec §8.3).
+   * moved and later callers are waiting on it.
    */
   readonly signal?: AbortSignal;
+  /**
+   * This caller's budget, used by `tryAcquire`: a wait longer than this is
+   * refused rather than waited out. Ignored by `acquire`, which waits.
+   */
+  readonly timeoutMs?: number;
 }
 
-/** What an acquisition cost, returned once the caller may proceed. */
-export interface AcquireResult {
-  /** Time actually waited, measured by the clock. Includes timer lateness. */
-  readonly waitedMs: number;
+/** What this limiter reports, which is a wait plus the permits it left. */
+export interface WarmupAcquireResult extends AcquireResult {
   /** Permits left in the pot immediately after this reservation. */
   readonly storedPermitsAfter: number;
 }
@@ -51,7 +55,7 @@ export class WarmupLimiter implements Scheduler {
    * positive safe integer or is too large for this rate, or with
    * `options.signal.reason` if cancelled.
    */
-  async acquire(permits = 1, options: AcquireOptions = {}): Promise<AcquireResult> {
+  async acquire(permits = 1, options: AcquireOptions = {}): Promise<WarmupAcquireResult> {
     // Before reserving: an already-cancelled caller spends nothing.
     options.signal?.throwIfAborted();
 
@@ -81,10 +85,11 @@ export class WarmupLimiter implements Scheduler {
    */
   async tryAcquire(
     permits = 1,
-    timeoutMs = Infinity,
     options: AcquireOptions = {},
-  ): Promise<AcquireResult | false> {
+  ): Promise<WarmupAcquireResult | false> {
     options.signal?.throwIfAborted();
+
+    const timeoutMs = options.timeoutMs ?? Infinity;
     if (Number.isNaN(timeoutMs) || timeoutMs < 0) {
       throw new RangeError(`timeoutMs must be a non-negative number, got ${String(timeoutMs)}`);
     }

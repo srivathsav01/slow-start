@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import * as publicApi from '../src/index.js';
-import type { AcquireOptions, AcquireResult, Clock, WarmupOptions } from '../src/index.js';
+import type {
+  AcquireOptions,
+  AcquireResult,
+  Clock,
+  WarmupAcquireResult,
+  WarmupOptions,
+} from '../src/index.js';
 
 describe('public surface', () => {
   // Adding a name here is a minor release; removing one is breaking. This
@@ -41,9 +47,10 @@ describe('public surface', () => {
     const options: WarmupOptions = { permitsPerSecond: 10, warmupPeriodMs: 100 };
     const clock: Clock = new publicApi.ManualClock();
     const acquireOptions: AcquireOptions = { signal: new AbortController().signal };
-    const result: AcquireResult = { waitedMs: 0, storedPermitsAfter: 0 };
+    const result: AcquireResult = { waitedMs: 0 };
+    const warmResult: WarmupAcquireResult = { waitedMs: 0, storedPermitsAfter: 0 };
 
-    expect([options, clock, acquireOptions, result]).toHaveLength(4);
+    expect([options, clock, acquireOptions, result, warmResult]).toHaveLength(5);
   });
 
   it('builds a working limiter from the entry point alone', async () => {
@@ -51,6 +58,6 @@ describe('public surface', () => {
     const limiter = new publicApi.WarmupLimiter({ permitsPerSecond: 100, warmupPeriodMs: 3000 }, clock);
 
     expect(await limiter.acquire()).toEqual({ waitedMs: 0, storedPermitsAfter: 299 });
-    expect(await limiter.tryAcquire(1, 0)).toBe(false);
+    expect(await limiter.tryAcquire(1, { timeoutMs: 0 })).toBe(false);
   });
 });

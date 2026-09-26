@@ -75,25 +75,6 @@ export class RollingWindow {
     bucket[kind] += count;
   }
 
-  /** The counts across the window, excluding buckets that have aged out. */
-  totals(): Counters {
-    const oldestMicros = this.nowMicros() - this.constants.windowMicros;
-    let pass = 0;
-    let block = 0;
-    let error = 0;
-
-    for (const bucket of this.buckets) {
-      // Buckets left from an earlier lap that nobody has written to yet still
-      // hold their old counts; their start time is what excludes them.
-      if (bucket.startMicros <= oldestMicros) continue;
-      pass += bucket.pass;
-      block += bucket.block;
-      error += bucket.error;
-    }
-
-    return { pass, block, error };
-  }
-
   /**
    * The counts plus the values derivable from them (spec §10.1).
    *
@@ -110,7 +91,20 @@ export class RollingWindow {
    * destroyed by summing — and a method claiming otherwise would be a lie.
    */
   snapshot(): WindowSnapshot {
-    const { pass, block, error } = this.totals();
+    const oldestMicros = this.nowMicros() - this.constants.windowMicros;
+    let pass = 0;
+    let block = 0;
+    let error = 0;
+
+    for (const bucket of this.buckets) {
+      // Buckets left from an earlier lap that nobody has written to yet still
+      // hold their old counts; their start time is what excludes them.
+      if (bucket.startMicros <= oldestMicros) continue;
+      pass += bucket.pass;
+      block += bucket.block;
+      error += bucket.error;
+    }
+
     const total = pass + block;
 
     return {

@@ -128,13 +128,13 @@ describe('Pacer', () => {
 
     it('a zero timeout succeeds only while a slot is free now', async () => {
       const { clock, pacer } = setup();
-      await expect(pacer.acquire(1, { timeoutMs: 0 })).resolves.toBeUndefined();
+      await expect(pacer.acquire(1, { timeoutMs: 0 })).resolves.toMatchObject({ waitedMs: 0 });
       await expect(pacer.acquire(1, { timeoutMs: 0 })).rejects.toBeInstanceOf(
         RateLimitRejectedError,
       );
 
       clock.advance(micros(10_000));
-      await expect(pacer.acquire(1, { timeoutMs: 0 })).resolves.toBeUndefined();
+      await expect(pacer.acquire(1, { timeoutMs: 0 })).resolves.toMatchObject({ waitedMs: 0 });
     });
 
     // The precedence rule, pinned down: a per-call timeout may only tighten.
@@ -178,7 +178,7 @@ describe('Pacer', () => {
       // Twenty refusals did not move the slot: the next caller still waits
       // exactly the one interval the first caller imposed.
       clock.advance(micros(10_000));
-      await expect(pacer.acquire(1, { timeoutMs: 0 })).resolves.toBeUndefined();
+      await expect(pacer.acquire(1, { timeoutMs: 0 })).resolves.toMatchObject({ waitedMs: 0 });
     });
 
     it.each([0, -1, 1.5, NaN, Infinity])('rejects permits = %s', async (permits) => {
@@ -200,7 +200,7 @@ describe('Pacer', () => {
 
       await expect(pacer.acquire(1, { signal: controller.signal })).rejects.toThrow();
       // The slot never moved: the next caller goes immediately.
-      await expect(pacer.acquire(1, { timeoutMs: 0 })).resolves.toBeUndefined();
+      await expect(pacer.acquire(1, { timeoutMs: 0 })).resolves.toMatchObject({ waitedMs: 0 });
     });
 
     it('rejects a queued caller with the abort reason and forfeits its slot', async () => {

@@ -29,9 +29,11 @@ describe.each([
   ['Pacer', pacer],
   ['QueuedLimiter', composed],
 ])('%s.tryAcquire', (_name, setup) => {
-  it('returns true when admitted', async () => {
+  it('returns a result when admitted', async () => {
     const { limiter } = setup();
-    expect(await limiter.tryAcquire()).toBe(true);
+    const result = await limiter.tryAcquire();
+    expect(result).not.toBe(false);
+    expect(result).toMatchObject({ waitedMs: expect.any(Number) as number });
   });
 
   it('returns false instead of throwing when a bound refuses', async () => {
@@ -70,7 +72,7 @@ describe.each([
 
   it('probes without waiting when given a zero timeout', async () => {
     const { limiter } = setup({ maxQueueDelayMs: 60_000 });
-    expect(await limiter.tryAcquire(1, { timeoutMs: 0 })).toBe(true);
+    expect(await limiter.tryAcquire(1, { timeoutMs: 0 })).not.toBe(false);
     expect(await limiter.tryAcquire(1, { timeoutMs: 0 })).toBe(false);
   });
 
@@ -157,8 +159,8 @@ describe('the acquire / tryAcquire pair', () => {
     }
 
     // And a first call succeeds on each, whichever half is used.
-    expect(await warm.tryAcquire(1, 0)).not.toBe(false);
-    expect(await paced.tryAcquire(1, { timeoutMs: 0 })).toBe(true);
-    expect(await queued.tryAcquire(1, { timeoutMs: 0 })).toBe(true);
+    for (const limiter of [warm, paced, queued]) {
+      expect(await limiter.tryAcquire(1, { timeoutMs: 0 })).not.toBe(false);
+    }
   });
 });

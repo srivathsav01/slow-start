@@ -177,8 +177,8 @@ const limiter = new QueuedLimiter(warm, { maxQueueDelayMs: 1000 });
   healthy.
 - After a brief idle period — a quiet minute at 3 a.m. — the next requests are
   slowed far more than the service needs.
-- Your `storedPermitsAfter` (from the result of `acquire`) sits high while
-  latency is already flat.
+- `storedPermitsAfter` (from the result of `WarmupLimiter.acquire`) sits
+  high while latency is already flat.
 
 **Fix:** shorten it towards where latency actually goes flat. If you measured
 8 seconds and set 60, the limiter is protecting a system that stopped needing

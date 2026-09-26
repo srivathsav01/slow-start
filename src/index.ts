@@ -7,7 +7,8 @@ export type { RejectionReason } from './core/errors.js';
 export type { Scheduler } from './core/scheduler.js';
 
 export type { WarmupOptions } from './warmup/constants.js';
-export type { AcquireOptions, AcquireResult } from './warmup/warmup-limiter.js';
+export type { AcquireResult } from './core/acquire-result.js';
+export type { AcquireOptions, WarmupAcquireResult } from './warmup/warmup-limiter.js';
 export { WarmupLimiter } from './warmup/warmup-limiter.js';
 
 export { Pacer } from './pacing/pacer.js';

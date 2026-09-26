@@ -19,9 +19,15 @@ function setup(options: WindowOptions = OPTIONS_TYPED): {
 
 const micros = (value: number): bigint => BigInt(value) * 1000n;
 
+/** The three counters, which snapshot() reports alongside its derived values. */
+function counts(window: RollingWindow): { pass: number; block: number; error: number } {
+  const { pass, block, error } = window.snapshot();
+  return { pass, block, error };
+}
+
 describe('RollingWindow', () => {
   it('starts empty', () => {
-    expect(setup().window.totals()).toEqual({ pass: 0, block: 0, error: 0 });
+    expect(counts(setup().window)).toEqual({ pass: 0, block: 0, error: 0 });
   });
 
   it('counts each kind separately', () => {
@@ -30,7 +36,7 @@ describe('RollingWindow', () => {
     window.record('pass');
     window.record('block');
     window.record('error', 5);
-    expect(window.totals()).toEqual({ pass: 2, block: 1, error: 5 });
+    expect(counts(window)).toEqual({ pass: 2, block: 1, error: 5 });
   });
 
   it('keeps counts written to the same bucket together', () => {
@@ -38,7 +44,7 @@ describe('RollingWindow', () => {
     window.record('pass');
     clock.advance(micros(49_999)); // still inside the first 50 ms bucket
     window.record('pass');
-    expect(window.totals()).toEqual({ pass: 2, block: 0, error: 0 });
+    expect(counts(window)).toEqual({ pass: 2, block: 0, error: 0 });
   });
 
   it('sums across buckets inside the window', () => {
@@ -49,7 +55,7 @@ describe('RollingWindow', () => {
     }
     // Twenty writes in twenty buckets, spanning exactly one window. The last
     // write is not followed by an advance, so none has aged out yet.
-    expect(window.totals().pass).toBe(20);
+    expect(counts(window).pass).toBe(20);
   });
 
   it('ages out counts after a full lap of the ring', () => {
@@ -58,10 +64,10 @@ describe('RollingWindow', () => {
     window.record('block');
 
     clock.advance(micros(999_999));
-    expect(window.totals()).toEqual({ pass: 1, block: 1, error: 0 });
+    expect(counts(window)).toEqual({ pass: 1, block: 1, error: 0 });
 
     clock.advance(micros(1)); // exactly one window later
-    expect(window.totals()).toEqual({ pass: 0, block: 0, error: 0 });
+    expect(counts(window)).toEqual({ pass: 0, block: 0, error: 0 });
   });
 
   it('drops only what has aged out, not the whole window', () => {
@@ -71,10 +77,10 @@ describe('RollingWindow', () => {
     window.record('pass'); // bucket at t=500,000
 
     clock.advance(micros(500_000)); // t=1,000,000: the first has aged out
-    expect(window.totals().pass).toBe(1);
+    expect(counts(window).pass).toBe(1);
 
     clock.advance(micros(500_000)); // t=1,500,000: so has the second
-    expect(window.totals().pass).toBe(0);
+    expect(counts(window).pass).toBe(0);
   });
 
   it('reuses a bucket rather than growing, over many laps', () => {
@@ -84,7 +90,7 @@ describe('RollingWindow', () => {
         window.record('pass');
         // Checked before advancing past the last bucket of the lap, when the
         // window holds exactly this lap's writes and none of the previous.
-        if (bucket === 19) expect(window.totals().pass).toBe(20);
+        if (bucket === 19) expect(counts(window).pass).toBe(20);
         clock.advance(micros(50_000));
       }
     }
@@ -96,26 +102,26 @@ describe('RollingWindow', () => {
 
     clock.advance(micros(1_000_000)); // one lap: same index, new era
     window.record('pass'); // must reset, not accumulate
-    expect(window.totals().pass).toBe(1);
+    expect(counts(window).pass).toBe(1);
   });
 
   it('counts a long idle gap as empty', () => {
     const { clock, window } = setup();
     window.record('pass', 3);
     clock.advance(micros(60_000_000)); // a minute of silence
-    expect(window.totals()).toEqual({ pass: 0, block: 0, error: 0 });
+    expect(counts(window)).toEqual({ pass: 0, block: 0, error: 0 });
 
     window.record('block');
-    expect(window.totals()).toEqual({ pass: 0, block: 1, error: 0 });
+    expect(counts(window)).toEqual({ pass: 0, block: 1, error: 0 });
   });
 
   it('works with a single bucket', () => {
     const { clock, window } = setup({ windowMs: 100, buckets: 1 });
     window.record('pass');
     clock.advance(micros(99_999));
-    expect(window.totals().pass).toBe(1);
+    expect(counts(window).pass).toBe(1);
     clock.advance(micros(1));
-    expect(window.totals().pass).toBe(0);
+    expect(counts(window).pass).toBe(0);
   });
 
   it.each([0, -1, 1.5, NaN, Infinity])('rejects count = %s', (count) => {
@@ -123,7 +129,7 @@ describe('RollingWindow', () => {
     expect(() => {
       window.record('pass', count);
     }).toThrow(RangeError);
-    expect(window.totals()).toEqual({ pass: 0, block: 0, error: 0 });
+    expect(counts(window)).toEqual({ pass: 0, block: 0, error: 0 });
   });
 
   it('refuses to blend two eras when the clock goes backwards', () => {
@@ -228,7 +234,7 @@ describe('RollingWindow', () => {
       window.record('block', 6);
       window.record('error', 2);
       const { pass, block, error } = window.snapshot();
-      expect({ pass, block, error }).toEqual(window.totals());
+      expect({ pass, block, error }).toEqual(counts(window));
     });
 
     // Spec §10.1: a sum and a count cannot produce a percentile, so nothing
@@ -248,6 +254,6 @@ describe('RollingWindow', () => {
 
     window.record('pass');
     clock.advance(micros(999_999));
-    expect(window.totals().pass).toBe(1);
+    expect(counts(window).pass).toBe(1);
   });
 });

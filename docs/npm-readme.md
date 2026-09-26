@@ -77,7 +77,7 @@ don't: a rate that starts low after idleness and ramps.
 - **Warm-up admission control** — Guava `SmoothWarmingUp`, verified against
   twelve hand-derived golden vectors
 - **Two ways to ask, on every limiter** — `acquire` waits and throws if it is
-  refused; `tryAcquire` returns `false` instead
+  refused; `tryAcquire` returns `false` instead of the result
 - **Queue bounds** — refuse callers who would wait too long, or when too many
   already are, instead of queueing without limit
 - **Pacing** — even spacing of bursts, composable with warm-up
@@ -135,6 +135,10 @@ await second;
 - **`acquire` throws on refusal, `tryAcquire` returns a value.** Every limiter
   follows that rule, so a refusal never forces a `try`/`catch` on you unless
   you want the reason.
+
+## Stability
+
+The public API is stable and will not break without a new major version.
 
 ## Full documentation
 

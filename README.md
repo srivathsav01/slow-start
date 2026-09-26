@@ -120,7 +120,7 @@ outcome rather than an exception, so you are never made to write a
 | Method | The question it answers | On refusal |
 |---|---|---|
 | `acquire(...)` | "I need this permit" | Throws `RateLimitRejectedError`, carrying `reason` and `waitMs` |
-| `tryAcquire(...)` | "only if it's cheap" | Returns `false` (or a result object on `WarmupLimiter`) |
+| `tryAcquire(...)` | "only if it's cheap" | Returns `false` instead of the result |
 | `attempt(limiter, ...)` | "I have to answer a client" | Returns `{ ok: false, reason, retryAfterMs }` |
 
 Neither `tryAcquire` nor `attempt` swallows anything else: invalid arguments
@@ -139,7 +139,7 @@ Invalid options throw a `RangeError` at construction.
 
 The second argument is a `Clock`, defaulting to the real one. Pass a `ManualClock` in tests (see [Testing your own code](#testing-your-own-code)).
 
-### `acquire(permits?, options?): Promise<AcquireResult>`
+### `acquire(permits?, options?): Promise<WarmupAcquireResult>`
 
 Reserves `permits` (default 1) and resolves when the caller may proceed.
 
@@ -152,14 +152,14 @@ const { waitedMs, storedPermitsAfter } = await limiter.acquire(2);
 - Asking for more permits than the limiter holds is allowed. The request drains what is stored and pays the stable interval for the rest, so the wait is proportionally longer.
 - `options.signal` takes an `AbortSignal`. See [Cancellation](#cancellation-stops-you-waiting-it-does-not-return-the-permit).
 
-`AcquireResult` reports `waitedMs`, the time actually waited as measured by the clock, and `storedPermitsAfter`, the permit level immediately after the reservation. Both are there for metrics and for understanding what the limiter is doing.
+Every limiter resolves with an `AcquireResult`, carrying `waitedMs` — the time actually waited, measured by the clock. `WarmupLimiter` resolves with a `WarmupAcquireResult`, which adds `storedPermitsAfter`, the permit level immediately after the reservation. Both are there for metrics and for understanding what the limiter is doing.
 
-### `tryAcquire(permits?, timeoutMs?, options?): Promise<AcquireResult | false>`
+### `tryAcquire(permits?, options?): Promise<WarmupAcquireResult | false>`
 
 Acquires only if the wait fits within `timeoutMs`, and returns `false` otherwise.
 
 ```ts
-if (await limiter.tryAcquire(1, 0)) {
+if (await limiter.tryAcquire(1, { timeoutMs: 0 })) {
   // A permit was free right now.
 } else {
   res.status(503).send('busy');
@@ -578,6 +578,16 @@ Warm-up and pacing compose. Under sustained overload — 200 requests per second
 | Warm-up + a 500 ms queue bound | 500 | 700 | 0.49 s | 0.50 s |
 
 Both admit at exactly the same rate while traffic flows — composition doesn't change the rate model. The difference is what happens to the excess: unbounded, it becomes a backlog that takes until 13.2 s to drain, serving callers who gave up long ago. Bounded, those callers are told immediately.
+
+## Stability
+
+The public API is stable. It will not change in a way that breaks working
+code without a new major version: the exported classes and functions, their
+option shapes, the fields on `AcquireResult` and `RateLimitRejectedError`, the
+`Clock` interface, and the behaviour documented here.
+
+New features arrive as additions in minor versions. Anything not exported from
+`slow-start` or `slow-start/adapters` is internal and may change at any time.
 
 ## Scope and deviations
 
