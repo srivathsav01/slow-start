@@ -7,7 +7,7 @@
 
 import { execFileSync } from 'node:child_process';
 import console from 'node:console';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import process from 'node:process';
@@ -26,6 +26,11 @@ const EXPECTED_EXPORTS = [
   'guard',
 ];
 const repoRoot = fileURLToPath(new URL('..', import.meta.url));
+// The verification oracle stays in the repo; the consumer reads it by
+// absolute path, so the check runs against the installed package but the
+// expected values come from `verification/`.
+const configPath = fileURLToPath(new URL('../verification/config.json', import.meta.url));
+const vectorsPath = fileURLToPath(new URL('../verification/golden-vectors.csv', import.meta.url));
 
 // npm sets npm_execpath to its own CLI script when running an npm script.
 // Calling it through the current Node binary avoids spawning `npm.cmd`
@@ -82,10 +87,22 @@ console.log(JSON.stringify({ file: require.resolve('${PACKAGE_NAME}'), exports: 
     failures.push(`exports differ: import ${JSON.stringify(esm.exports)}, require ${JSON.stringify(cjs.exports)}`);
   }
 
+  // 5. Replay the golden vectors through the INSTALLED package, using only
+  //    its public API. The unit tests prove src/ reproduces them; this proves
+  //    the artifact users download does.
+  copyFileSync(join(repoRoot, 'scripts', 'replay-vectors.mjs'), join(workDir, 'vectors.mjs'));
+  const vectors = JSON.parse(
+    run(process.execPath, ['vectors.mjs', configPath, vectorsPath], workDir),
+  );
+  if (vectors.failures.length > 0) {
+    failures.push(`golden vectors differ in the packed build: ${vectors.failures.join('; ')}`);
+  }
+
   if (failures.length > 0) {
     throw new Error(`smoke test failed:\n  ${failures.join('\n  ')}`);
   }
 
+  console.log(`vectors -> ${vectors.replayed} golden vectors replayed, all matching`);
   console.log(`import  -> ${esm.exports.join(', ')}`);
   console.log(`require -> ${cjs.exports.join(', ')}`);
   console.log('smoke test passed');
