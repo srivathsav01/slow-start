@@ -301,24 +301,6 @@ fails stays spent.
 Both take any limiter in this package, and anything else with a matching
 `acquire` — the `Limiter` type is structural, not a base class.
 
-### No framework adapters
-
-The design called for Express, Fastify and Koa adapters. They are
-deliberately absent, and the reason is **reversibility**: adding adapters
-later is additive and non-breaking, while removing them once people depend on
-them needs a major version and a migration note. Shipping `attempt` keeps both
-doors open.
-
-Each adapter would also be about four lines of real logic wrapped in a
-permanent public surface with its own semver obligations, and the build would
-start tracking three frameworks' release cycles for it.
-
-The cost is real and worth naming: `app.use(limiter.express())` is what people
-search for, and a snippet asks you to understand the integration before you
-can use it. If adapters are added later they will live in this package under a
-subpath export rather than a package per framework — and only if someone asks
-for them.
-
 ## Metrics
 
 `RollingWindow` counts what happened over the last N milliseconds. It is a
@@ -546,17 +528,7 @@ Both admit at exactly the same rate while traffic flows — composition doesn't 
 
 **Exact arithmetic, not bit-identical to Guava.** Guava computes in integer microseconds and truncates the wait at two points. This implementation keeps exact floating-point values, so an individual wait may differ from Guava's by up to **1 µs**, always in the permissive direction, bounding the rate error at 0.01%. Guava truncates because Java's arithmetic makes it convenient, not as a design choice; reproducing it would mean writing extra code to be marginally less accurate. The divergence was measured, not estimated — see [`verification/`](verification/).
 
-**No framework adapters.** `attempt` and `guard` are shipped instead, with
-tested snippets for Express, Fastify and Koa. The reasoning is
-[above](#no-framework-adapters).
-
 **`warmupPeriodMs` must be greater than zero.** Guava allows zero; this library rejects it. With a zero warm-up period the cool-down interval is `0 / 0`, and every derived value becomes `NaN`. A limiter with no warm-up is a plain rate limiter, and there are better packages for that.
-
-## Roadmap
-
-- **v0.1.0** — the warm-up limiter, verified against golden vectors.
-- **v0.2.0** — pacing: a virtual-slot scheduler, queue bounds, a single-timer wait queue, and composition with warm-up.
-- **v0.3.0, planned** — metrics and adapters: a rolling counter window as an independent subsystem, plus Express, Fastify and Koa middleware.
 
 ## Licence
 
