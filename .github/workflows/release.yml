@@ -213,24 +213,6 @@ jobs:
             echo "| provenance | \`$provenance\` |"
           } >> "$GITHUB_STEP_SUMMARY"
 
-      # `npm publish` sets exactly one dist-tag, and OIDC only authenticates
-      # publishing — every other registry write needs a token. This keeps
-      # `next` from pointing at an older build than `latest`, and skips with a
-      # warning rather than failing a release that already succeeded.
-      - name: Point next at this release
-        if: ${{ !inputs.dry_run && inputs.dist_tag == 'latest' }}
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          if [ -z "${NODE_AUTH_TOKEN}" ]; then
-            echo "::warning::NPM_TOKEN is not set, so the next dist-tag was left where it was. Move it by hand: npm dist-tag add <pkg>@${{ steps.version.outputs.version }} next"
-            exit 0
-          fi
-
-          name=$(node -p "require('./package.json').name")
-          npm dist-tag add "$name@${{ steps.version.outputs.version }}" next
-          npm dist-tag ls "$name"
-
       - name: Summary
         if: ${{ always() }}
         run: |
